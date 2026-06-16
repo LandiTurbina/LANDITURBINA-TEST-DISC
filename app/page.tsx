@@ -264,6 +264,7 @@ export default function Home() {
   const [lookupError, setLookupError] = useState('');
   const [testResult, setTestResult] = useState<ReturnType<typeof calculateDiscResult> | null>(null);
   const [resultTimestamp, setResultTimestamp] = useState('');
+  const [resultOrigin, setResultOrigin] = useState<'new' | 'history'>('new');
   const [isSaving, setIsSaving] = useState(false);
 
   const randomizedQuestions = useMemo(() => {
@@ -366,6 +367,7 @@ export default function Home() {
       setComparisonTests(sortOldest([...previousTests, savedTest || fallbackCurrentTest]));
       setResultTimestamp((savedTest || fallbackCurrentTest).timestamp);
       setTestResult(result);
+      setResultOrigin('new');
       setAppState('completed');
     } catch (error) {
       console.error(error);
@@ -384,6 +386,7 @@ export default function Home() {
     setComparisonTests(historicalSlice.length > 1 ? historicalSlice : [selectedTest]);
     setResultTimestamp(selectedTest.timestamp);
     setTestResult(buildResultFromRecord(selectedTest));
+    setResultOrigin('history');
     setAppState('completed');
   };
 
@@ -435,9 +438,17 @@ export default function Home() {
                     Encontramos {previousTests.length} teste(s) anterior(es). Ao finalizar o novo teste, o comparativo será gerado automaticamente por data, usando todo o histórico desde o primeiro registro.
                   </p>
                 </div>
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <button onClick={() => handleViewPastResult()} className="px-5 py-3 rounded-lg border border-white/15 text-white font-display text-sm font-medium hover:bg-white/5 transition-all">VER ÚLTIMA ANÁLISE</button>
-                  <button onClick={() => setAppState('test')} className="px-5 py-3 rounded-lg bg-primary text-white font-display text-sm font-medium hover:bg-primary/90 transition-all">NOVO TESTE</button>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full md:w-auto">
+                  <button onClick={() => handleViewPastResult()} className="group min-w-44 rounded-xl border border-white/15 bg-white/[0.03] px-5 py-4 text-left transition-all hover:-translate-y-0.5 hover:border-white/35 hover:bg-white/[0.06] focus:outline-none focus:ring-2 focus:ring-white/25">
+                    <span className="block text-[10px] font-mono uppercase tracking-widest text-foreground/40">Consulta rápida</span>
+                    <span className="mt-1 block font-display text-sm font-bold text-white">VER ÚLTIMA ANÁLISE</span>
+                    <span className="mt-2 block text-xs leading-snug text-foreground/55">Abre o resultado completo mais recente.</span>
+                  </button>
+                  <button onClick={() => setAppState('test')} className="group min-w-44 rounded-xl border border-primary/40 bg-primary px-5 py-4 text-left text-white shadow-lg shadow-primary/10 transition-all hover:-translate-y-0.5 hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary/60">
+                    <span className="block text-[10px] font-mono uppercase tracking-widest text-white/65">Novo ciclo</span>
+                    <span className="mt-1 block font-display text-sm font-bold">FAZER NOVO TESTE</span>
+                    <span className="mt-2 block text-xs leading-snug text-white/70">Atualiza seu histórico e gera novo comparativo.</span>
+                  </button>
                 </div>
               </div>
               <div className="space-y-3 max-h-[50vh] overflow-auto pr-1">
@@ -483,6 +494,15 @@ export default function Home() {
             </div>
             <div className="w-full max-w-4xl mx-auto px-4 py-8 pb-32 space-y-10">
               <div>
+                {previousTests.length === 0 && (
+                  <div className="mb-6 rounded-xl border border-primary/25 bg-primary/10 p-5">
+                    <p className="text-xs font-mono uppercase tracking-widest text-primary">Primeiro teste encontrado</p>
+                    <h2 className="mt-2 font-display text-2xl font-bold text-white">Vamos criar sua primeira análise DISC</h2>
+                    <p className="mt-3 text-sm leading-relaxed text-foreground/70">
+                      Não encontramos resultados anteriores para este nome e telefone. Responda com calma: em cada situação, use cada nota de 1 a 4 apenas uma vez, sendo 4 o comportamento que mais parece com você.
+                    </p>
+                  </div>
+                )}
                 <p className="text-sm md:text-base text-foreground/80">Dê notas de <strong className="text-white">1 a 4</strong> para cada linha. <strong className="text-white underline decoration-primary underline-offset-4 decoration-2">4 = mais parece com você</strong>.</p>
                 <div className="mt-4 p-4 border border-primary/20 bg-primary/5 rounded-lg">
                   <p className="text-sm font-mono text-foreground/60 uppercase">Regra: não repita números na mesma situação. A escolha é exclusiva.</p>
@@ -541,6 +561,11 @@ export default function Home() {
                   <p className="text-foreground/50 font-mono text-sm uppercase">{normalizedDisplayName} | {formatDateTime(resultTimestamp || new Date().toISOString())}</p>
                 </div>
                 <div className="no-print flex flex-wrap gap-2">
+                  {resultOrigin === 'history' && (
+                    <button onClick={() => setAppState('history')} className="bg-white/[0.03] hover:bg-white/[0.07] text-white border border-white/15 rounded-lg px-4 py-2 font-display text-sm font-medium transition-all flex items-center gap-2">
+                      VOLTAR AOS TESTES
+                    </button>
+                  )}
                   <button onClick={() => generateAnalysisPDF({ mode: 'full', filename: `Relatorio_DISC_${safePdfName(normalizedDisplayName)}.pdf`, normalizedDisplayName, result: testResult, comparisonTests, reportDate: resultTimestamp })} className="bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded-lg px-4 py-2 font-display text-sm font-medium transition-all flex items-center gap-2">
                     <Download size={16} /> RELATÓRIO COMPLETO
                   </button>
