@@ -1,10 +1,9 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { CalendarDays, Download, FileText, Search, TrendingUp, UserRound } from 'lucide-react';
 import Image from 'next/image';
-import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import { Factor, calculateDiscResult, discQuestions, shuffleArray } from '@/lib/disc-engine';
 import type { DiscTestRecord, LeadData } from '@/lib/disc-types';
@@ -21,6 +20,18 @@ const factorLabels: Record<Factor, string> = {
   I: 'Comunicador',
   S: 'Planejador',
   C: 'Analista',
+};
+const factorDescriptions: Record<Factor, string> = {
+  D: 'Decisão, ação direta, velocidade e foco em resultado.',
+  I: 'Comunicação, influência, entusiasmo e conexão com pessoas.',
+  S: 'Estabilidade, constância, cooperação e ritmo previsível.',
+  C: 'Critério, precisão, método e atenção aos detalhes.',
+};
+const factorColors: Record<Factor, string> = {
+  D: '#BC0F24',
+  I: '#737373',
+  S: '#383838',
+  C: '#A3A3A3',
 };
 
 function nameInputValue(value: string) {
@@ -50,6 +61,175 @@ function deltaText(value: number) {
   return '=';
 }
 
+function safePdfName(value: string) {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w-]+/g, '_');
+}
+
+function addWrappedText(pdf: jsPDF, text: string, x: number, y: number, maxWidth: number, lineHeight = 6) {
+  const lines = pdf.splitTextToSize(text, maxWidth);
+  pdf.text(lines, x, y);
+  return y + lines.length * lineHeight;
+}
+
+function ensurePdfSpace(pdf: jsPDF, y: number, needed = 20) {
+  const pageHeight = pdf.internal.pageSize.getHeight();
+  if (y + needed <= pageHeight - 14) return y;
+  pdf.addPage();
+  paintPdfBackground(pdf);
+  return 18;
+}
+
+function paintPdfBackground(pdf: jsPDF) {
+  pdf.setFillColor(11, 11, 11);
+  pdf.rect(0, 0, pdf.internal.pageSize.getWidth(), pdf.internal.pageSize.getHeight(), 'F');
+}
+
+function buildComparisonStats(comparisonTests: ComparableTest[]) {
+  const orderedTests = sortOldest(comparisonTests);
+  if (orderedTests.length < 2) return null;
+  const first = orderedTests[0];
+  const previous = orderedTests[orderedTests.length - 2];
+  const current = orderedTests[orderedTests.length - 1];
+  const totalDelta = buildFactorDelta(first, { percentages: current.percentages } as ReturnType<typeof calculateDiscResult>);
+  const lastDelta = buildFactorDelta(previous, { percentages: current.percentages } as ReturnType<typeof calculateDiscResult>);
+  const biggestShift = (Object.keys(totalDelta) as Factor[]).sort((a, b) => Math.abs(totalDelta[b]) - Math.abs(totalDelta[a]))[0];
+  const profileChanges = orderedTests.reduce((acc, test, index) => {
+    if (index === 0) return acc;
+    return orderedTests[index - 1].primaryProfile !== test.primaryProfile ? acc + 1 : acc;
+  }, 0);
+
+  return { orderedTests, first, previous, current, totalDelta, lastDelta, biggestShift, profileChanges };
+}
+
+function generateAnalysisPDF({
+  mode,
+  filename,
+  normalizedDisplayName,
+  result,
+  comparisonTests,
+}: {
+  mode: 'full' | 'comparison';
+  filename: string;
+  normalizedDisplayName: string;
+  result: ReturnType<typeof calculateDiscResult>;
+  comparisonTests: ComparableTest[];
+}) {
+  const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const margin = 16;
+  const contentWidth = pageWidth - margin * 2;
+  const stats = buildComparisonStats(comparisonTests);
+  let y = 18;
+
+  paintPdfBackground(pdf);
+  pdf.setTextColor(255, 255, 255);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(18);
+  pdf.text(mode === 'full' ? 'RELATÓRIO COMPLETO DISC' : 'COMPARATIVO HISTÓRICO DISC', margin, y);
+  y += 8;
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(10);
+  pdf.setTextColor(170, 170, 170);
+  pdf.text(`${normalizedDisplayName} | ${formatDateTime(new Date().toISOString())}`, margin, y);
+  y += 12;
+
+  if (mode === 'full') {
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(13);
+    pdf.setTextColor(188, 15, 36);
+    pdf.text('Resultado atual', margin, y);
+    y += 8;
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFontSize(24);
+    pdf.text(result.combinedString.replace('-', ' / '), margin, y);
+    y += 10;
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(11);
+    pdf.setTextColor(235, 235, 235);
+    y = addWrappedText(pdf, `"${result.reportCopy}"`, margin, y, contentWidth, 6) + 6;
+
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(11);
+    pdf.setTextColor(255, 255, 255);
+    (['D', 'I', 'S', 'C'] as Factor[]).forEach((factor, index) => {
+      const x = margin + index * (contentWidth / 4);
+      pdf.text(`${factor} - ${factorLabels[factor]}`, x, y);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(`${result.percentages[factor]}%`, x, y + 6);
+      pdf.setFont('helvetica', 'bold');
+    });
+    y += 20;
+  }
+
+  if (stats) {
+    y = ensurePdfSpace(pdf, y, 45);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setFontSize(13);
+    pdf.setTextColor(188, 15, 36);
+    pdf.text('Comparativo histórico', margin, y);
+    y += 8;
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(10);
+    pdf.setTextColor(220, 220, 220);
+    y = addWrappedText(
+      pdf,
+      `${stats.orderedTests.length} testes analisados entre ${formatDateTime(stats.first.timestamp)} e ${formatDateTime(stats.current.timestamp)}. Perfil inicial: ${stats.first.primaryProfile} / ${stats.first.secondaryProfile}. Perfil atual: ${stats.current.primaryProfile} / ${stats.current.secondaryProfile}. Trocas de perfil primário: ${stats.profileChanges}.`,
+      margin,
+      y,
+      contentWidth,
+      5,
+    ) + 6;
+
+    y = addWrappedText(
+      pdf,
+      `Leitura da evolução: desde o primeiro teste, o eixo com maior movimentação foi ${factorLabels[stats.biggestShift]}, com variação de ${deltaText(stats.totalDelta[stats.biggestShift])} p.p. No comparativo mais recente, o perfil saiu de ${stats.previous.primaryProfile} para ${stats.current.primaryProfile}.`,
+      margin,
+      y,
+      contentWidth,
+      5,
+    ) + 8;
+
+    (['D', 'I', 'S', 'C'] as Factor[]).forEach((factor) => {
+      y = ensurePdfSpace(pdf, y, 14);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(255, 255, 255);
+      pdf.text(`${factorLabels[factor]} (${factor})`, margin, y);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(190, 190, 190);
+      pdf.text(
+        `Primeiro: ${stats.first.percentages[factor]}% | Atual: ${stats.current.percentages[factor]}% | Total: ${deltaText(stats.totalDelta[factor])} p.p. | Último: ${deltaText(stats.lastDelta[factor])} p.p.`,
+        margin,
+        y + 6,
+      );
+      y += 13;
+    });
+
+    y += 3;
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(188, 15, 36);
+    pdf.text('Linha do tempo', margin, y);
+    y += 8;
+    pdf.setFontSize(9);
+    stats.orderedTests.forEach((test, index) => {
+      y = ensurePdfSpace(pdf, y, 12);
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(`${index + 1}. ${formatDateTime(test.timestamp)}`, margin, y);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(205, 205, 205);
+      pdf.text(`${test.primaryProfile} / ${test.secondaryProfile}`, margin + 48, y);
+      pdf.text(`D ${test.percentages.D}%  I ${test.percentages.I}%  S ${test.percentages.S}%  C ${test.percentages.C}%`, margin + 118, y);
+      y += 8;
+    });
+  } else if (mode === 'comparison') {
+    pdf.setTextColor(220, 220, 220);
+    pdf.setFontSize(11);
+    pdf.text('Ainda não há testes suficientes para gerar comparativo histórico.', margin, y);
+  }
+
+  pdf.save(filename);
+}
+
 export default function Home() {
   const [appState, setAppState] = useState<AppState>('splash');
   const [userData, setUserData] = useState<LeadData>(emptyUser);
@@ -60,8 +240,6 @@ export default function Home() {
   const [lookupError, setLookupError] = useState('');
   const [testResult, setTestResult] = useState<ReturnType<typeof calculateDiscResult> | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const resultRef = useRef<HTMLDivElement>(null);
-  const comparisonRef = useRef<HTMLDivElement>(null);
 
   const randomizedQuestions = useMemo(() => {
     return discQuestions.map((q) => {
@@ -169,35 +347,6 @@ export default function Home() {
     } finally {
       setIsSaving(false);
     }
-  };
-
-  const downloadElementAsPDF = async (element: HTMLDivElement | null, filename: string) => {
-    if (!element) return;
-
-    const canvas = await html2canvas(element, {
-      scale: 2,
-      backgroundColor: '#0B0B0B',
-      useCORS: true,
-      logging: false,
-      onclone: (clonedDoc) => {
-        clonedDoc.querySelectorAll('.no-print').forEach((el) => ((el as HTMLElement).style.display = 'none'));
-      },
-    });
-
-    const imgData = canvas.toDataURL('image/jpeg', 1.0);
-    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-    const pdfWidth = pdf.internal.pageSize.getWidth();
-    const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-    let position = 0;
-
-    pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, pdfHeight);
-    while (pdfHeight + position > pdf.internal.pageSize.getHeight()) {
-      position -= pdf.internal.pageSize.getHeight();
-      pdf.addPage();
-      pdf.addImage(imgData, 'JPEG', 0, position, pdfWidth, pdfHeight);
-    }
-
-    pdf.save(filename);
   };
 
   const validOnboarding = normalizedDisplayName.length >= 5 && onlyDigits(userData.telefone).length >= 10;
@@ -341,8 +490,8 @@ export default function Home() {
         )}
 
         {appState === 'completed' && testResult && (
-          <motion.section key="completed" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex-1 flex flex-col items-center p-4 md:p-12 w-full max-w-5xl mx-auto">
-            <div ref={resultRef} className="w-full bg-[#0B0B0B] p-6 md:p-8 rounded-xl shadow-2xl">
+          <motion.section key="completed" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex-1 flex flex-col items-center p-4 md:p-10 w-full max-w-6xl mx-auto">
+            <div className="w-full bg-[#0B0B0B] p-5 md:p-8 rounded-xl shadow-2xl">
               <div className="w-full flex flex-col md:flex-row md:justify-between md:items-center gap-5 mb-10 pb-6 border-b border-white/10">
                 <div>
                   <Image src="https://i.imgur.com/PMCjrpw.png" alt="Landi Turbina" width={140} height={40} className="w-32 md:w-40 object-contain mb-4" />
@@ -350,25 +499,19 @@ export default function Home() {
                   <p className="text-foreground/50 font-mono text-sm uppercase">{normalizedDisplayName} | {formatDateTime(new Date().toISOString())}</p>
                 </div>
                 <div className="no-print flex flex-wrap gap-2">
-                  <button onClick={() => downloadElementAsPDF(resultRef.current, `Landi_${normalizedDisplayName.replace(/\s+/g, '_')}.pdf`)} className="bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded-lg px-4 py-2 font-display text-sm font-medium transition-all flex items-center gap-2">
-                    <Download size={16} /> RELATÓRIO
+                  <button onClick={() => generateAnalysisPDF({ mode: 'full', filename: `Relatorio_DISC_${safePdfName(normalizedDisplayName)}.pdf`, normalizedDisplayName, result: testResult, comparisonTests })} className="bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded-lg px-4 py-2 font-display text-sm font-medium transition-all flex items-center gap-2">
+                    <Download size={16} /> RELATÓRIO COMPLETO
                   </button>
                   {hasComparison && (
-                    <button onClick={() => downloadElementAsPDF(comparisonRef.current, `Comparativo_${normalizedDisplayName.replace(/\s+/g, '_')}.pdf`)} className="bg-primary hover:bg-primary/90 text-white rounded-lg px-4 py-2 font-display text-sm font-medium transition-all flex items-center gap-2">
+                    <button onClick={() => generateAnalysisPDF({ mode: 'comparison', filename: `Comparativo_DISC_${safePdfName(normalizedDisplayName)}.pdf`, normalizedDisplayName, result: testResult, comparisonTests })} className="bg-primary hover:bg-primary/90 text-white rounded-lg px-4 py-2 font-display text-sm font-medium transition-all flex items-center gap-2">
                       <FileText size={16} /> COMPARATIVO
                     </button>
                   )}
                 </div>
               </div>
-              <div className="w-full grid grid-cols-1 md:grid-cols-12 gap-8 md:gap-12">
-                <div className="md:col-span-5 flex flex-col items-center md:items-start">
-                  <div className="relative w-64 h-64 md:w-80 md:h-80 mx-auto md:mx-0 flex items-center justify-center rounded-full bg-panel p-[1px]">
-                    <div className="w-full h-full rounded-full absolute inset-0" style={{ background: `conic-gradient(#BC0F24 0% ${testResult.percentages.D}%, #666666 ${testResult.percentages.D}% ${testResult.percentages.D + testResult.percentages.I}%, #333333 ${testResult.percentages.D + testResult.percentages.I}% ${testResult.percentages.D + testResult.percentages.I + testResult.percentages.S}%, #999999 ${testResult.percentages.D + testResult.percentages.I + testResult.percentages.S}% 100%)` }} />
-                    <div className="w-3/4 h-3/4 rounded-full bg-background/95 relative z-10 flex flex-col items-center justify-center border border-white/5">
-                      <span className="text-4xl font-display font-bold text-white leading-none">{Math.max(...Object.values(testResult.percentages))}%</span>
-                      <span className="text-xs uppercase font-mono text-primary mt-1 tracking-widest">{testResult.primaryProfile}</span>
-                    </div>
-                  </div>
+              <div className="w-full grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12">
+                <div className="lg:col-span-5 flex flex-col items-center lg:items-start">
+                  <DonutChart percentages={testResult.percentages} primaryProfile={testResult.primaryProfile} />
                   <div className="w-full mt-8 grid grid-cols-2 gap-3">
                     {(['D', 'I', 'S', 'C'] as Factor[]).map((factor) => (
                       <div key={factor} className="bg-panel/30 border border-border p-4 rounded-lg flex flex-col items-center relative">
@@ -378,8 +521,9 @@ export default function Home() {
                       </div>
                     ))}
                   </div>
+                  <ProfileVisual percentages={testResult.percentages} />
                 </div>
-                <div className="md:col-span-7 flex flex-col justify-center space-y-6">
+                <div className="lg:col-span-7 flex flex-col justify-center space-y-6">
                   <div>
                     <h3 className="text-sm font-mono text-primary uppercase tracking-widest mb-2">DIAGNÓSTICO</h3>
                     <h2 className="font-display font-bold text-4xl md:text-5xl uppercase tracking-tighter text-white leading-[0.9]">
@@ -391,15 +535,17 @@ export default function Home() {
                     <div className="absolute top-0 left-0 w-1 h-full bg-primary rounded-l-xl" />
                     <p className="text-lg md:text-xl text-foreground font-medium leading-relaxed">&quot;{testResult.reportCopy}&quot;</p>
                   </div>
-                  {hasComparison ? (
-                    <ComparisonBlock refProp={comparisonRef} normalizedDisplayName={normalizedDisplayName} comparisonTests={comparisonTests} />
-                  ) : (
-                    <div className="bg-panel/50 border border-border p-6 rounded-xl">
-                      <h4 className="text-xs font-mono text-foreground/50 uppercase tracking-widest mb-2">Primeiro registro</h4>
-                      <p className="text-sm text-foreground/75">Este é o primeiro teste DISC localizado para este cadastro. O próximo resultado já terá comparativo completo por data.</p>
-                    </div>
-                  )}
                 </div>
+              </div>
+              <div className="mt-10">
+                {hasComparison ? (
+                  <ComparisonBlock normalizedDisplayName={normalizedDisplayName} comparisonTests={comparisonTests} />
+                ) : (
+                  <div className="bg-panel/50 border border-border p-6 rounded-xl">
+                    <h4 className="text-xs font-mono text-foreground/50 uppercase tracking-widest mb-2">Primeiro registro</h4>
+                    <p className="text-sm text-foreground/75">Este é o primeiro teste DISC localizado para este cadastro. O próximo resultado já terá comparativo completo por data.</p>
+                  </div>
+                )}
               </div>
             </div>
           </motion.section>
@@ -409,25 +555,122 @@ export default function Home() {
   );
 }
 
-function ComparisonBlock({ refProp, normalizedDisplayName, comparisonTests }: { refProp: React.RefObject<HTMLDivElement | null>; normalizedDisplayName: string; comparisonTests: ComparableTest[] }) {
-  const orderedTests = sortOldest(comparisonTests);
-  const first = orderedTests[0];
-  const previous = orderedTests[orderedTests.length - 2];
-  const current = orderedTests[orderedTests.length - 1];
-  const totalDelta = buildFactorDelta(first, {
-    percentages: current.percentages,
-  } as ReturnType<typeof calculateDiscResult>);
-  const lastDelta = buildFactorDelta(previous, {
-    percentages: current.percentages,
-  } as ReturnType<typeof calculateDiscResult>);
-  const biggestShift = (Object.keys(totalDelta) as Factor[]).sort((a, b) => Math.abs(totalDelta[b]) - Math.abs(totalDelta[a]))[0];
-  const profileChanges = orderedTests.reduce((acc, test, index) => {
-    if (index === 0) return acc;
-    return orderedTests[index - 1].primaryProfile !== test.primaryProfile ? acc + 1 : acc;
-  }, 0);
+function DonutChart({ percentages, primaryProfile }: { percentages: Record<Factor, number>; primaryProfile: string }) {
+  const [activeFactor, setActiveFactor] = useState<Factor>('C');
+  const factors = ['D', 'I', 'S', 'C'] as Factor[];
+  const radius = 78;
+  const circumference = 2 * Math.PI * radius;
+  let offset = 0;
 
   return (
-    <div ref={refProp} className="bg-panel/50 border border-border p-6 rounded-xl relative overflow-hidden">
+    <div className="w-full flex flex-col items-center lg:items-start gap-4">
+      <div className="relative w-72 h-72 md:w-80 md:h-80 flex items-center justify-center">
+        <svg viewBox="0 0 200 200" className="w-full h-full -rotate-90" role="img" aria-label="Distribuição do perfil DISC">
+          <circle cx="100" cy="100" r={radius} fill="none" stroke="#1f1f1f" strokeWidth="28" />
+          {factors.map((factor) => {
+            const value = percentages[factor];
+            const dash = (value / 100) * circumference;
+            const segment = (
+              <circle
+                key={factor}
+                cx="100"
+                cy="100"
+                r={radius}
+                fill="none"
+                stroke={factorColors[factor]}
+                strokeWidth={activeFactor === factor ? 32 : 26}
+                strokeDasharray={`${dash} ${circumference - dash}`}
+                strokeDashoffset={-offset}
+                strokeLinecap="butt"
+                className="cursor-pointer transition-all duration-200 outline-none"
+                tabIndex={0}
+                onMouseEnter={() => setActiveFactor(factor)}
+                onFocus={() => setActiveFactor(factor)}
+                onClick={() => setActiveFactor(factor)}
+              />
+            );
+            offset += dash;
+            return segment;
+          })}
+        </svg>
+        <div className="absolute inset-[24%] rounded-full bg-background/95 border border-white/10 flex flex-col items-center justify-center text-center px-4">
+          <span className="text-4xl font-display font-bold text-white leading-none">{percentages[activeFactor]}%</span>
+          <span className="text-xs uppercase font-mono text-primary mt-2 tracking-widest">{factorLabels[activeFactor]}</span>
+          <span className="text-[10px] uppercase text-foreground/35 mt-1">{primaryProfile}</span>
+        </div>
+        <div className="absolute right-0 top-3 w-44 rounded-lg border border-white/10 bg-[#101010]/95 p-3 text-left shadow-2xl backdrop-blur-sm">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-mono text-foreground/45">{activeFactor}</span>
+            <span className="text-xs font-mono text-primary">{percentages[activeFactor]}%</span>
+          </div>
+          <p className="mt-1 text-sm font-display text-white">{factorLabels[activeFactor]}</p>
+          <p className="mt-1 text-[11px] leading-snug text-foreground/55">{factorDescriptions[activeFactor]}</p>
+        </div>
+      </div>
+      <div className="w-full max-w-sm rounded-lg border border-white/10 bg-panel/60 p-4 shadow-xl">
+        <div className="flex items-center justify-between gap-3">
+          <p className="font-display text-base text-white">{activeFactor} - {factorLabels[activeFactor]}</p>
+          <span className="font-mono text-sm text-primary">{percentages[activeFactor]}%</span>
+        </div>
+        <p className="mt-2 text-sm leading-relaxed text-foreground/65">{factorDescriptions[activeFactor]}</p>
+        <p className="mt-3 text-[11px] font-mono uppercase tracking-widest text-foreground/35">Passe o mouse ou toque em uma fatia do gráfico.</p>
+      </div>
+    </div>
+  );
+}
+
+function ProfileVisual({ percentages }: { percentages: Record<Factor, number> }) {
+  const ranking = (['D', 'I', 'S', 'C'] as Factor[]).sort((a, b) => percentages[b] - percentages[a]);
+  const dominant = ranking[0];
+
+  return (
+    <div className="mt-8 w-full rounded-xl border border-white/10 bg-panel/35 p-4 md:p-5">
+      <div className="flex items-center justify-between gap-3 mb-5">
+        <div>
+          <p className="text-xs font-mono uppercase tracking-widest text-primary">Mapa visual DISC</p>
+          <p className="text-sm text-foreground/55 mt-1">A força visual de cada eixo acompanha sua porcentagem.</p>
+        </div>
+        <span className="rounded-md border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-mono text-primary">{factorLabels[dominant]}</span>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {ranking.map((factor, index) => (
+          <button
+            type="button"
+            key={factor}
+            className={cn(
+              'group relative min-h-28 overflow-hidden rounded-lg border p-4 text-left transition-all',
+              index === 0 ? 'border-primary/60 bg-primary/10' : 'border-white/10 bg-black/25 hover:border-white/25',
+            )}
+          >
+            <div
+              className="absolute inset-y-0 left-0 opacity-20 transition-all group-hover:opacity-30"
+              style={{ width: `${Math.max(18, percentages[factor])}%`, background: factorColors[factor] }}
+            />
+            <div className="relative z-10">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-2xl font-display font-bold text-white">{factor}</p>
+                  <p className="text-xs font-mono uppercase tracking-widest text-foreground/45">{factorLabels[factor]}</p>
+                </div>
+                <span className="font-mono text-lg text-white">{percentages[factor]}%</span>
+              </div>
+              <p className="mt-3 text-xs leading-relaxed text-foreground/60">{factorDescriptions[factor]}</p>
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ComparisonBlock({ normalizedDisplayName, comparisonTests }: { normalizedDisplayName: string; comparisonTests: ComparableTest[] }) {
+  const stats = buildComparisonStats(comparisonTests);
+  if (!stats) return null;
+  const { orderedTests, first, previous, current, totalDelta, lastDelta, biggestShift, profileChanges } = stats;
+
+  return (
+    <div className="bg-panel/50 border border-border p-5 md:p-7 rounded-xl relative overflow-hidden">
       <div className="flex items-start gap-3 mb-5">
         <CalendarDays className="text-primary mt-0.5" size={18} />
         <div>
@@ -439,14 +682,14 @@ function ComparisonBlock({ refProp, normalizedDisplayName, comparisonTests }: { 
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-5">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         <SummaryCard label="Total de testes" value={`${orderedTests.length}`} detail="inclui o resultado atual" />
         <SummaryCard label="Perfil inicial" value={first.primaryProfile} detail={`${first.secondaryProfile} como apoio`} />
         <SummaryCard label="Perfil atual" value={current.primaryProfile} detail={`${current.secondaryProfile} como apoio`} />
         <SummaryCard label="Trocas de perfil" value={`${profileChanges}`} detail="mudanças de perfil primário" />
       </div>
 
-      <div className="rounded-lg border border-white/10 bg-black/25 p-4 mb-5">
+      <div className="rounded-lg border border-white/10 bg-black/25 p-5 md:p-6 mb-6">
         <div className="flex items-center gap-2 mb-3">
           <TrendingUp size={16} className="text-primary" />
           <h5 className="font-display text-sm text-white uppercase">Leitura da evolução</h5>
@@ -456,7 +699,7 @@ function ComparisonBlock({ refProp, normalizedDisplayName, comparisonTests }: { 
         </p>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-6">
         {(['D', 'I', 'S', 'C'] as Factor[]).map((factor) => (
           <div key={factor} className="rounded-lg bg-black/30 border border-white/10 p-3">
             <p className="text-xs font-mono text-foreground/45">{factorLabels[factor]}</p>
@@ -469,7 +712,29 @@ function ComparisonBlock({ refProp, normalizedDisplayName, comparisonTests }: { 
         ))}
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-white/10">
+      <div className="md:hidden space-y-3 mb-5">
+        {orderedTests.map((test, index) => (
+          <div key={test.id} className="rounded-lg border border-white/10 bg-black/25 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="font-mono text-xs text-foreground/45">{formatDateTime(test.timestamp)}</p>
+                <p className="mt-1 text-sm font-display text-white">{index + 1}. {test.primaryProfile} / {test.secondaryProfile}</p>
+              </div>
+              <span className="rounded-md bg-white/5 px-2 py-1 text-xs font-mono text-foreground/65">#{index + 1}</span>
+            </div>
+            <div className="mt-4 grid grid-cols-4 gap-2">
+              {(['D', 'I', 'S', 'C'] as Factor[]).map((factor) => (
+                <div key={factor} className="rounded-md bg-white/[0.03] p-2 text-center">
+                  <p className="text-[10px] font-mono text-foreground/35">{factor}</p>
+                  <p className="font-mono text-sm text-white">{test.percentages[factor]}%</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="hidden md:block overflow-x-auto rounded-lg border border-white/10">
         <table className="w-full min-w-[620px] text-left text-sm">
           <thead className="bg-white/[0.03] text-xs font-mono uppercase text-foreground/45">
             <tr>
