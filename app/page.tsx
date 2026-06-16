@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { CalendarDays, Download, FileText, Search, TrendingUp, UserRound } from 'lucide-react';
+import { CalendarDays, Download, Search, TrendingUp, UserRound } from 'lucide-react';
 import Image from 'next/image';
 import jsPDF from 'jspdf';
 import { Factor, calculateDiscResult, discQuestions, shuffleArray } from '@/lib/disc-engine';
@@ -59,6 +59,12 @@ function deltaText(value: number) {
   if (value > 0) return `+${value}`;
   if (value < 0) return `${value}`;
   return '=';
+}
+
+function deltaSentence(value: number) {
+  if (value > 0) return `subiu ${value} pontos percentuais`;
+  if (value < 0) return `caiu ${Math.abs(value)} pontos percentuais`;
+  return 'permaneceu estável';
 }
 
 function safePdfName(value: string) {
@@ -200,7 +206,7 @@ function generateAnalysisPDF({
 
     y = addWrappedText(
       pdf,
-      `Leitura da evolução: desde o primeiro teste, o eixo com maior movimentação foi ${factorLabels[stats.biggestShift]}, com variação de ${deltaText(stats.totalDelta[stats.biggestShift])} p.p. No comparativo mais recente, o perfil saiu de ${stats.previous.primaryProfile} para ${stats.current.primaryProfile}.`,
+      `Leitura da evolução: desde o primeiro teste, o eixo com maior movimentação foi ${factorLabels[stats.biggestShift]}; ele ${deltaSentence(stats.totalDelta[stats.biggestShift])}. No comparativo mais recente, o perfil saiu de ${stats.previous.primaryProfile} para ${stats.current.primaryProfile}.`,
       margin,
       y,
       contentWidth,
@@ -215,7 +221,7 @@ function generateAnalysisPDF({
       pdf.setFont('helvetica', 'normal');
       pdf.setTextColor(190, 190, 190);
       pdf.text(
-        `Primeiro: ${stats.first.percentages[factor]}% | Atual: ${stats.current.percentages[factor]}% | Total: ${deltaText(stats.totalDelta[factor])} p.p. | Último: ${deltaText(stats.lastDelta[factor])} p.p.`,
+        `Primeiro: ${stats.first.percentages[factor]}% | Atual: ${stats.current.percentages[factor]}% | Desde o primeiro: ${deltaSentence(stats.totalDelta[factor])} | Último teste: ${deltaSentence(stats.lastDelta[factor])}.`,
         margin,
         y + 6,
       );
@@ -538,11 +544,6 @@ export default function Home() {
                   <button onClick={() => generateAnalysisPDF({ mode: 'full', filename: `Relatorio_DISC_${safePdfName(normalizedDisplayName)}.pdf`, normalizedDisplayName, result: testResult, comparisonTests, reportDate: resultTimestamp })} className="bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded-lg px-4 py-2 font-display text-sm font-medium transition-all flex items-center gap-2">
                     <Download size={16} /> RELATÓRIO COMPLETO
                   </button>
-                  {hasComparison && (
-                    <button onClick={() => generateAnalysisPDF({ mode: 'comparison', filename: `Comparativo_DISC_${safePdfName(normalizedDisplayName)}.pdf`, normalizedDisplayName, result: testResult, comparisonTests, reportDate: resultTimestamp })} className="bg-primary hover:bg-primary/90 text-white rounded-lg px-4 py-2 font-display text-sm font-medium transition-all flex items-center gap-2">
-                      <FileText size={16} /> COMPARATIVO
-                    </button>
-                  )}
                 </div>
               </div>
               <div className="w-full grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12">
@@ -557,9 +558,8 @@ export default function Home() {
                       </div>
                     ))}
                   </div>
-                  <ProfileVisual percentages={testResult.percentages} />
                 </div>
-                <div className="lg:col-span-7 flex flex-col justify-center space-y-6">
+                <div className="lg:col-span-7 flex flex-col justify-start space-y-6">
                   <div>
                     <h3 className="text-sm font-mono text-primary uppercase tracking-widest mb-2">DIAGNÓSTICO</h3>
                     <h2 className="font-display font-bold text-4xl md:text-5xl uppercase tracking-tighter text-white leading-[0.9]">
@@ -571,6 +571,7 @@ export default function Home() {
                     <div className="absolute top-0 left-0 w-1 h-full bg-primary rounded-l-xl" />
                     <p className="text-lg md:text-xl text-foreground font-medium leading-relaxed">&quot;{testResult.reportCopy}&quot;</p>
                   </div>
+                  <DiscQuadrantMap percentages={testResult.percentages} />
                 </div>
               </div>
               <div className="mt-10">
@@ -592,8 +593,10 @@ export default function Home() {
 }
 
 function DonutChart({ percentages, primaryProfile }: { percentages: Record<Factor, number>; primaryProfile: string }) {
-  const [activeFactor, setActiveFactor] = useState<Factor>('C');
+  const [activeFactor, setActiveFactor] = useState<Factor | null>(null);
   const factors = ['D', 'I', 'S', 'C'] as Factor[];
+  const dominantFactor = [...factors].sort((a, b) => percentages[b] - percentages[a])[0];
+  const displayFactor = activeFactor || dominantFactor;
   const radius = 78;
   const circumference = 2 * Math.PI * radius;
   let offset = 0;
@@ -621,7 +624,9 @@ function DonutChart({ percentages, primaryProfile }: { percentages: Record<Facto
                 className="cursor-pointer transition-all duration-200 outline-none"
                 tabIndex={0}
                 onMouseEnter={() => setActiveFactor(factor)}
+                onMouseLeave={() => setActiveFactor(null)}
                 onFocus={() => setActiveFactor(factor)}
+                onBlur={() => setActiveFactor(null)}
                 onClick={() => setActiveFactor(factor)}
               />
             );
@@ -630,75 +635,104 @@ function DonutChart({ percentages, primaryProfile }: { percentages: Record<Facto
           })}
         </svg>
         <div className="absolute inset-[24%] rounded-full bg-background/95 border border-white/10 flex flex-col items-center justify-center text-center px-4">
-          <span className="text-4xl font-display font-bold text-white leading-none">{percentages[activeFactor]}%</span>
-          <span className="text-xs uppercase font-mono text-primary mt-2 tracking-widest">{factorLabels[activeFactor]}</span>
+          <span className="text-4xl font-display font-bold text-white leading-none">{percentages[displayFactor]}%</span>
+          <span className="text-xs uppercase font-mono text-primary mt-2 tracking-widest">{factorLabels[displayFactor]}</span>
           <span className="text-[10px] uppercase text-foreground/35 mt-1">{primaryProfile}</span>
         </div>
-        <div className="absolute right-0 top-3 w-44 rounded-lg border border-white/10 bg-[#101010]/95 p-3 text-left shadow-2xl backdrop-blur-sm">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-mono text-foreground/45">{activeFactor}</span>
-            <span className="text-xs font-mono text-primary">{percentages[activeFactor]}%</span>
+        {activeFactor && (
+          <div className="absolute right-0 top-3 w-44 rounded-lg border border-white/10 bg-[#101010]/95 p-3 text-left shadow-2xl backdrop-blur-sm">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-mono text-foreground/45">{activeFactor}</span>
+              <span className="text-xs font-mono text-primary">{percentages[activeFactor]}%</span>
+            </div>
+            <p className="mt-1 text-sm font-display text-white">{factorLabels[activeFactor]}</p>
+            <p className="mt-1 text-[11px] leading-snug text-foreground/55">{factorDescriptions[activeFactor]}</p>
           </div>
-          <p className="mt-1 text-sm font-display text-white">{factorLabels[activeFactor]}</p>
-          <p className="mt-1 text-[11px] leading-snug text-foreground/55">{factorDescriptions[activeFactor]}</p>
-        </div>
+        )}
       </div>
       <div className="w-full max-w-sm rounded-lg border border-white/10 bg-panel/60 p-4 shadow-xl">
         <div className="flex items-center justify-between gap-3">
-          <p className="font-display text-base text-white">{activeFactor} - {factorLabels[activeFactor]}</p>
-          <span className="font-mono text-sm text-primary">{percentages[activeFactor]}%</span>
+          <p className="font-display text-base text-white">{activeFactor ? `${activeFactor} - ${factorLabels[activeFactor]}` : 'Distribuição DISC'}</p>
+          <span className="font-mono text-sm text-primary">{activeFactor ? `${percentages[activeFactor]}%` : '4 eixos'}</span>
         </div>
-        <p className="mt-2 text-sm leading-relaxed text-foreground/65">{factorDescriptions[activeFactor]}</p>
-        <p className="mt-3 text-[11px] font-mono uppercase tracking-widest text-foreground/35">Passe o mouse ou toque em uma fatia do gráfico.</p>
+        <p className="mt-2 text-sm leading-relaxed text-foreground/65">
+          {activeFactor ? factorDescriptions[activeFactor] : 'Passe o mouse sobre uma fatia para ver o significado daquele eixo. No toque, selecione a fatia desejada.'}
+        </p>
+        <p className="mt-3 text-[11px] font-mono uppercase tracking-widest text-foreground/35">O centro destaca o eixo mais forte do resultado.</p>
       </div>
     </div>
   );
 }
 
-function ProfileVisual({ percentages }: { percentages: Record<Factor, number> }) {
+function DiscQuadrantMap({ percentages }: { percentages: Record<Factor, number> }) {
+  const quadrants: Array<{ factor: Factor; position: string; axis: string }> = [
+    { factor: 'D', position: 'col-start-1 row-start-1', axis: 'Ativo + tarefa' },
+    { factor: 'I', position: 'col-start-2 row-start-1', axis: 'Ativo + pessoas' },
+    { factor: 'C', position: 'col-start-1 row-start-2', axis: 'Reflexivo + tarefa' },
+    { factor: 'S', position: 'col-start-2 row-start-2', axis: 'Reflexivo + pessoas' },
+  ];
   const ranking = (['D', 'I', 'S', 'C'] as Factor[]).sort((a, b) => percentages[b] - percentages[a]);
   const dominant = ranking[0];
 
   return (
-    <div className="mt-8 w-full rounded-xl border border-white/10 bg-panel/35 p-4 md:p-5">
+    <div className="w-full rounded-xl border border-white/10 bg-panel/35 p-4 md:p-5">
       <div className="flex items-center justify-between gap-3 mb-5">
         <div>
           <p className="text-xs font-mono uppercase tracking-widest text-primary">Mapa visual DISC</p>
-          <p className="text-sm text-foreground/55 mt-1">A força visual de cada eixo acompanha sua porcentagem.</p>
+          <p className="text-sm text-foreground/55 mt-1">Quadrante com intensidade proporcional ao resultado.</p>
         </div>
         <span className="rounded-md border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-mono text-primary">{factorLabels[dominant]}</span>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {ranking.map((factor, index) => (
-          <button
-            type="button"
-            key={factor}
-            className={cn(
-              'group relative min-h-28 overflow-hidden rounded-lg border p-4 text-left transition-all',
-              index === 0 ? 'border-primary/60 bg-primary/10' : 'border-white/10 bg-black/25 hover:border-white/25',
-            )}
-          >
-            <div
-              className="absolute inset-y-0 left-0 opacity-20 transition-all group-hover:opacity-30"
-              style={{ width: `${Math.max(18, percentages[factor])}%`, background: factorColors[factor] }}
-            />
-            <div className="relative z-10">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-2xl font-display font-bold text-white">{factor}</p>
-                  <p className="text-xs font-mono uppercase tracking-widest text-foreground/45">{factorLabels[factor]}</p>
+      <div className="grid grid-cols-[auto_1fr_auto] grid-rows-[auto_1fr_auto] gap-3">
+        <div className="col-start-2 row-start-1 text-center text-[10px] font-mono uppercase tracking-widest text-foreground/35">Ativo</div>
+        <div className="col-start-1 row-start-2 flex items-center text-[10px] font-mono uppercase tracking-widest text-foreground/35 [writing-mode:vertical-rl] rotate-180">Tarefa</div>
+        <div className="col-start-3 row-start-2 flex items-center text-[10px] font-mono uppercase tracking-widest text-foreground/35 [writing-mode:vertical-rl]">Pessoas</div>
+        <div className="col-start-2 row-start-3 text-center text-[10px] font-mono uppercase tracking-widest text-foreground/35">Reflexivo</div>
+
+        <div className="col-start-2 row-start-2 relative aspect-square overflow-hidden rounded-lg border border-white/10 bg-black/35">
+          <div className="absolute inset-x-0 top-1/2 h-px bg-white/15" />
+          <div className="absolute inset-y-0 left-1/2 w-px bg-white/15" />
+          <div className="absolute left-1/2 top-1/2 z-20 h-12 w-12 -translate-x-1/2 -translate-y-1/2 rounded-md border border-primary/35 bg-[#0B0B0B] flex items-center justify-center">
+            <span className="text-xs font-display text-primary">DISC</span>
+          </div>
+
+          <div className="grid h-full w-full grid-cols-2 grid-rows-2">
+            {quadrants.map(({ factor, position, axis }) => (
+              <div key={factor} className={cn('relative overflow-hidden p-3 md:p-4', position, dominant === factor ? 'ring-1 ring-inset ring-primary/60' : '')}>
+                <div className="absolute inset-0 opacity-10" style={{ background: factorColors[factor] }} />
+                <div className="absolute bottom-0 left-0 right-0 transition-all" style={{ height: `${Math.max(12, percentages[factor])}%`, background: factorColors[factor], opacity: dominant === factor ? 0.48 : 0.28 }} />
+                <div className="relative z-10 flex h-full flex-col justify-between">
+                  <div>
+                    <p className="text-3xl md:text-4xl font-display font-bold text-white">{factor}</p>
+                    <p className="text-[10px] md:text-xs font-mono uppercase tracking-widest text-foreground/55">{factorLabels[factor]}</p>
+                  </div>
+                  <div>
+                    <p className="font-mono text-lg text-white">{percentages[factor]}%</p>
+                    <p className="text-[10px] leading-snug text-foreground/45">{axis}</p>
+                  </div>
                 </div>
-                <span className="font-mono text-lg text-white">{percentages[factor]}%</span>
               </div>
-              <p className="mt-3 text-xs leading-relaxed text-foreground/60">{factorDescriptions[factor]}</p>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2">
+        {ranking.map((factor, index) => (
+          <div key={factor} className={cn('rounded-lg border p-3', index === 0 ? 'border-primary/40 bg-primary/10' : 'border-white/10 bg-black/20')}>
+            <div className="flex items-center justify-between gap-2">
+              <p className="font-display text-sm text-white">{factorLabels[factor]}</p>
+              <span className="font-mono text-xs text-primary">{percentages[factor]}%</span>
             </div>
-          </button>
+            <p className="mt-1 text-xs leading-relaxed text-foreground/55">{factorDescriptions[factor]}</p>
+          </div>
         ))}
       </div>
     </div>
   );
 }
+
 
 function ComparisonBlock({ normalizedDisplayName, comparisonTests }: { normalizedDisplayName: string; comparisonTests: ComparableTest[] }) {
   const stats = buildComparisonStats(comparisonTests);
@@ -731,7 +765,7 @@ function ComparisonBlock({ normalizedDisplayName, comparisonTests }: { normalize
           <h5 className="font-display text-sm text-white uppercase">Leitura da evolução</h5>
         </div>
         <p className="text-sm text-foreground/80 leading-relaxed">
-          Desde o primeiro teste, o eixo com maior movimentação foi <span className="font-bold text-white">{factorLabels[biggestShift]}</span>, com variação de <span className={cn('font-bold', totalDelta[biggestShift] > 0 ? 'text-green-500' : totalDelta[biggestShift] < 0 ? 'text-red-500' : 'text-white')}>{deltaText(totalDelta[biggestShift])} p.p.</span>. No comparativo mais recente, o perfil saiu de <span className="font-bold text-white">{previous.primaryProfile}</span> para <span className="font-bold text-primary">{current.primaryProfile}</span>{previous.primaryProfile === current.primaryProfile ? ', mantendo o mesmo eixo principal.' : ', indicando mudança no eixo principal.'}
+          Desde o primeiro teste, o eixo que mais mudou foi <span className="font-bold text-white">{factorLabels[biggestShift]}</span>: ele <span className={cn('font-bold', totalDelta[biggestShift] > 0 ? 'text-green-500' : totalDelta[biggestShift] < 0 ? 'text-red-500' : 'text-white')}>{deltaSentence(totalDelta[biggestShift])}</span>. Em termos simples, isso mostra onde o comportamento mais se deslocou ao longo do tempo. No teste mais recente, o perfil principal foi de <span className="font-bold text-white">{previous.primaryProfile}</span> para <span className="font-bold text-primary">{current.primaryProfile}</span>{previous.primaryProfile === current.primaryProfile ? ', mantendo a mesma tendência dominante.' : ', indicando mudança na tendência dominante.'}
         </p>
       </div>
 
@@ -742,7 +776,7 @@ function ComparisonBlock({ normalizedDisplayName, comparisonTests }: { normalize
             <p className="text-sm text-foreground/60 mt-1">Primeiro: <span className="text-white font-mono">{first.percentages[factor]}%</span></p>
             <p className="text-sm text-foreground/60">Atual: <span className="text-white font-mono">{current.percentages[factor]}%</span></p>
             <p className={cn('text-xs font-mono mt-2', totalDelta[factor] > 0 ? 'text-green-500' : totalDelta[factor] < 0 ? 'text-red-500' : 'text-foreground/45')}>
-              Total {deltaText(totalDelta[factor])} p.p. | Último {deltaText(lastDelta[factor])} p.p.
+              Desde o primeiro: {deltaSentence(totalDelta[factor])}. Último teste: {deltaSentence(lastDelta[factor])}.
             </p>
           </div>
         ))}
