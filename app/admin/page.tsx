@@ -1,13 +1,18 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Calendar, Eye, EyeOff, KeyRound, LockKeyhole, LogOut, Mail, Search } from 'lucide-react';
+import { Calendar, Check, ChevronDown, Eye, EyeOff, KeyRound, LockKeyhole, LogOut, Mail, Search, X } from 'lucide-react';
 import type { DiscTestRecord } from '@/lib/disc-types';
 import { formatDateTime, onlyDigits } from '@/lib/normalization';
 import { cn } from '@/lib/utils';
 
 type AuthState = 'loading' | 'setup' | 'login' | 'reset' | 'ready' | 'error';
 type SortMode = 'newest' | 'oldest';
+
+const sortLabels: Record<SortMode, string> = {
+  newest: 'Mais novo primeiro',
+  oldest: 'Mais antigo primeiro',
+};
 
 export default function AdminPage() {
   const [authState, setAuthState] = useState<AuthState>('loading');
@@ -25,6 +30,7 @@ export default function AdminPage() {
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [sortMode, setSortMode] = useState<SortMode>('newest');
+  const [sortOpen, setSortOpen] = useState(false);
   const [loadingTests, setLoadingTests] = useState(false);
 
   const loadTests = useCallback(async () => {
@@ -183,12 +189,8 @@ export default function AdminPage() {
             <LockKeyhole size={24} />
             <span className="text-xs font-mono uppercase tracking-widest">Admin Landi Turbina</span>
           </div>
-          <h1 className="font-display text-3xl font-bold text-white mb-2">
-            {authTitle}
-          </h1>
-          <p className="text-sm text-foreground/60 mb-7">
-            {authDescription}
-          </p>
+          <h1 className="font-display text-3xl font-bold text-white mb-2">{authTitle}</h1>
+          <p className="text-sm text-foreground/60 mb-7">{authDescription}</p>
           {authState !== 'loading' && authState !== 'error' && (
             <div className="space-y-4">
               <label className="relative block">
@@ -272,23 +274,57 @@ export default function AdminPage() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_180px_180px_170px] gap-3 mb-6">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_210px_210px_220px] gap-3 mb-6">
           <label className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-foreground/35" size={18} />
-            <input value={query} onChange={(event) => setQuery(event.target.value)} className="w-full h-12 bg-panel/60 border border-border rounded-lg pl-10 pr-4 outline-none focus:border-primary/60" placeholder="Filtrar por nome, telefone ou perfil" />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} className="w-full h-14 bg-panel/60 border border-border rounded-lg pl-10 pr-4 outline-none focus:border-primary/60 focus:ring-1 focus:ring-primary/50 text-white placeholder:text-foreground/45" placeholder="Filtrar por nome, telefone ou perfil" />
           </label>
-          <label className="relative">
-            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-foreground/35" size={16} />
-            <input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} className="w-full h-12 bg-panel/60 border border-border rounded-lg pl-10 pr-3 outline-none focus:border-primary/60 text-sm" />
-          </label>
-          <label className="relative">
-            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-foreground/35" size={16} />
-            <input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} className="w-full h-12 bg-panel/60 border border-border rounded-lg pl-10 pr-3 outline-none focus:border-primary/60 text-sm" />
-          </label>
-          <select value={sortMode} onChange={(event) => setSortMode(event.target.value as SortMode)} className="h-12 bg-panel/60 border border-border rounded-lg px-3 outline-none focus:border-primary/60 text-sm">
-            <option value="newest">Mais novo primeiro</option>
-            <option value="oldest">Mais antigo primeiro</option>
-          </select>
+          <DateFilter label="Data inicial" value={fromDate} onChange={setFromDate} />
+          <DateFilter label="Data final" value={toDate} onChange={setToDate} />
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setSortOpen((value) => !value)}
+              onBlur={() => window.setTimeout(() => setSortOpen(false), 120)}
+              className={cn(
+                'h-14 w-full rounded-lg border bg-panel/60 px-4 text-left outline-none transition-all',
+                'hover:border-white/35 focus:border-primary/70 focus:ring-1 focus:ring-primary/50',
+                sortOpen ? 'border-primary/70 shadow-[0_0_0_1px_rgba(188,15,36,0.25)]' : 'border-border',
+              )}
+              aria-haspopup="listbox"
+              aria-expanded={sortOpen}
+            >
+              <span className="block text-[10px] font-mono uppercase tracking-widest text-foreground/40">Ordenar</span>
+              <span className="mt-0.5 flex items-center justify-between gap-3 text-sm font-medium text-white">
+                {sortLabels[sortMode]}
+                <ChevronDown size={16} className={cn('text-foreground/45 transition-transform', sortOpen && 'rotate-180 text-primary')} />
+              </span>
+            </button>
+            {sortOpen && (
+              <div className="absolute right-0 top-[calc(100%+8px)] z-30 w-full overflow-hidden rounded-lg border border-border bg-[#111111] shadow-2xl shadow-black/50" role="listbox">
+                {(['newest', 'oldest'] as SortMode[]).map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => {
+                      setSortMode(option);
+                      setSortOpen(false);
+                    }}
+                    className={cn(
+                      'flex w-full items-center justify-between px-4 py-3 text-left text-sm transition-colors',
+                      sortMode === option ? 'bg-primary text-white' : 'text-foreground/80 hover:bg-white/5 hover:text-white',
+                    )}
+                    role="option"
+                    aria-selected={sortMode === option}
+                  >
+                    {sortLabels[option]}
+                    {sortMode === option && <Check size={16} />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="mb-4 flex items-center justify-between">
@@ -334,5 +370,36 @@ export default function AdminPage() {
         </div>
       </section>
     </main>
+  );
+}
+
+function DateFilter({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <label className="group relative block">
+      <Calendar className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-foreground/35 transition-colors group-focus-within:text-primary" size={16} />
+      <span className="pointer-events-none absolute left-10 top-2 text-[10px] font-mono uppercase tracking-widest text-foreground/40">
+        {label}
+      </span>
+      <input
+        type="date"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className={cn(
+          'h-14 w-full rounded-lg border border-border bg-panel/60 pb-2 pl-10 pr-10 pt-6 text-sm font-medium text-white outline-none transition-all',
+          'hover:border-white/35 focus:border-primary/70 focus:ring-1 focus:ring-primary/50',
+          '[color-scheme:dark] [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-0',
+        )}
+      />
+      {value && (
+        <button
+          type="button"
+          onClick={() => onChange('')}
+          className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-foreground/45 hover:bg-white/5 hover:text-white"
+          aria-label={`Limpar ${label.toLowerCase()}`}
+        >
+          <X size={14} />
+        </button>
+      )}
+    </label>
   );
 }
