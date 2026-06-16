@@ -101,18 +101,36 @@ function buildComparisonStats(comparisonTests: ComparableTest[]) {
   return { orderedTests, first, previous, current, totalDelta, lastDelta, biggestShift, profileChanges };
 }
 
+function buildResultFromRecord(test: ComparableTest): ReturnType<typeof calculateDiscResult> {
+  const orderedFactors = (['D', 'I', 'S', 'C'] as Factor[]).sort((a, b) => test.percentages[b] - test.percentages[a]);
+  const primaryFactor = orderedFactors[0];
+  const secondaryFactor = orderedFactors[1];
+
+  return {
+    rawScores: { D: 0, I: 0, S: 0, C: 0 },
+    percentages: test.percentages,
+    primaryProfile: test.primaryProfile,
+    secondaryProfile: test.secondaryProfile,
+    combinedString: `${test.primaryProfile}-${test.secondaryProfile}`,
+    relationships: { brothers: [], cousin: '' },
+    reportCopy: `Resultado recuperado do histórico. Neste teste, o eixo predominante foi ${test.primaryProfile}, com ${test.percentages[primaryFactor]}%, acompanhado por ${test.secondaryProfile}, com ${test.percentages[secondaryFactor]}%. Use o comparativo abaixo para entender a evolução desse perfil ao longo do tempo.`,
+  };
+}
+
 function generateAnalysisPDF({
   mode,
   filename,
   normalizedDisplayName,
   result,
   comparisonTests,
+  reportDate,
 }: {
   mode: 'full' | 'comparison';
   filename: string;
   normalizedDisplayName: string;
   result: ReturnType<typeof calculateDiscResult>;
   comparisonTests: ComparableTest[];
+  reportDate?: string;
 }) {
   const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pageWidth = pdf.internal.pageSize.getWidth();
@@ -130,7 +148,7 @@ function generateAnalysisPDF({
   pdf.setFont('helvetica', 'normal');
   pdf.setFontSize(10);
   pdf.setTextColor(170, 170, 170);
-  pdf.text(`${normalizedDisplayName} | ${formatDateTime(new Date().toISOString())}`, margin, y);
+  pdf.text(`${normalizedDisplayName} | ${formatDateTime(reportDate || new Date().toISOString())}`, margin, y);
   y += 12;
 
   if (mode === 'full') {
@@ -239,6 +257,7 @@ export default function Home() {
   const [lookupLoading, setLookupLoading] = useState(false);
   const [lookupError, setLookupError] = useState('');
   const [testResult, setTestResult] = useState<ReturnType<typeof calculateDiscResult> | null>(null);
+  const [resultTimestamp, setResultTimestamp] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
   const randomizedQuestions = useMemo(() => {
@@ -339,6 +358,7 @@ export default function Home() {
       };
 
       setComparisonTests(sortOldest([...previousTests, savedTest || fallbackCurrentTest]));
+      setResultTimestamp((savedTest || fallbackCurrentTest).timestamp);
       setTestResult(result);
       setAppState('completed');
     } catch (error) {
@@ -347,6 +367,18 @@ export default function Home() {
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleViewPastResult = (testId?: string) => {
+    const orderedTests = sortOldest(previousTests);
+    const selectedTest = testId ? orderedTests.find((test) => test.id === testId) : orderedTests[orderedTests.length - 1];
+    if (!selectedTest) return;
+    const selectedTime = new Date(selectedTest.timestamp).getTime();
+    const historicalSlice = orderedTests.filter((test) => new Date(test.timestamp).getTime() <= selectedTime);
+    setComparisonTests(historicalSlice.length > 1 ? historicalSlice : [selectedTest]);
+    setResultTimestamp(selectedTest.timestamp);
+    setTestResult(buildResultFromRecord(selectedTest));
+    setAppState('completed');
   };
 
   const validOnboarding = normalizedDisplayName.length >= 5 && onlyDigits(userData.telefone).length >= 10;
@@ -397,13 +429,16 @@ export default function Home() {
                     Encontramos {previousTests.length} teste(s) anterior(es). Ao finalizar o novo teste, o comparativo será gerado automaticamente por data, usando todo o histórico desde o primeiro registro.
                   </p>
                 </div>
-                <button onClick={() => setAppState('test')} className="px-5 py-3 rounded-lg bg-primary text-white font-display text-sm font-medium">INICIAR TESTE</button>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <button onClick={() => handleViewPastResult()} className="px-5 py-3 rounded-lg border border-white/15 text-white font-display text-sm font-medium hover:bg-white/5 transition-all">VER ÚLTIMA ANÁLISE</button>
+                  <button onClick={() => setAppState('test')} className="px-5 py-3 rounded-lg bg-primary text-white font-display text-sm font-medium hover:bg-primary/90 transition-all">NOVO TESTE</button>
+                </div>
               </div>
               <div className="space-y-3 max-h-[50vh] overflow-auto pr-1">
                 {previousTests.map((test, index) => {
                   const phoneChanged = test.phoneDigits && test.phoneDigits !== onlyDigits(userData.telefone);
                   return (
-                    <div key={test.id} className="w-full rounded-lg border border-border bg-black/20 p-4">
+                    <button key={test.id} type="button" onClick={() => handleViewPastResult(test.id)} className="w-full text-left rounded-lg border border-border bg-black/20 p-4 transition-all hover:border-primary/45 hover:bg-primary/5 focus:outline-none focus:ring-2 focus:ring-primary/50">
                       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                         <div>
                           <p className="font-display text-lg text-white">#{index + 1} - {test.primaryProfile} + {test.secondaryProfile}</p>
@@ -417,7 +452,8 @@ export default function Home() {
                         </div>
                       </div>
                       {phoneChanged && <p className="text-xs text-primary mt-3">Telefone novo detectado. Ao salvar, o cadastro por nome passa a apontar para o telefone informado agora.</p>}
-                    </div>
+                      <p className="text-[11px] font-mono uppercase tracking-widest text-foreground/35 mt-3">Clique para abrir a análise completa</p>
+                    </button>
                   );
                 })}
               </div>
@@ -496,14 +532,14 @@ export default function Home() {
                 <div>
                   <Image src="https://i.imgur.com/PMCjrpw.png" alt="Landi Turbina" width={140} height={40} className="w-32 md:w-40 object-contain mb-4" />
                   <h1 className="font-display font-bold text-2xl md:text-3xl uppercase tracking-tight text-white mb-1">ANÁLISE DE PERFORMANCE</h1>
-                  <p className="text-foreground/50 font-mono text-sm uppercase">{normalizedDisplayName} | {formatDateTime(new Date().toISOString())}</p>
+                  <p className="text-foreground/50 font-mono text-sm uppercase">{normalizedDisplayName} | {formatDateTime(resultTimestamp || new Date().toISOString())}</p>
                 </div>
                 <div className="no-print flex flex-wrap gap-2">
-                  <button onClick={() => generateAnalysisPDF({ mode: 'full', filename: `Relatorio_DISC_${safePdfName(normalizedDisplayName)}.pdf`, normalizedDisplayName, result: testResult, comparisonTests })} className="bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded-lg px-4 py-2 font-display text-sm font-medium transition-all flex items-center gap-2">
+                  <button onClick={() => generateAnalysisPDF({ mode: 'full', filename: `Relatorio_DISC_${safePdfName(normalizedDisplayName)}.pdf`, normalizedDisplayName, result: testResult, comparisonTests, reportDate: resultTimestamp })} className="bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded-lg px-4 py-2 font-display text-sm font-medium transition-all flex items-center gap-2">
                     <Download size={16} /> RELATÓRIO COMPLETO
                   </button>
                   {hasComparison && (
-                    <button onClick={() => generateAnalysisPDF({ mode: 'comparison', filename: `Comparativo_DISC_${safePdfName(normalizedDisplayName)}.pdf`, normalizedDisplayName, result: testResult, comparisonTests })} className="bg-primary hover:bg-primary/90 text-white rounded-lg px-4 py-2 font-display text-sm font-medium transition-all flex items-center gap-2">
+                    <button onClick={() => generateAnalysisPDF({ mode: 'comparison', filename: `Comparativo_DISC_${safePdfName(normalizedDisplayName)}.pdf`, normalizedDisplayName, result: testResult, comparisonTests, reportDate: resultTimestamp })} className="bg-primary hover:bg-primary/90 text-white rounded-lg px-4 py-2 font-display text-sm font-medium transition-all flex items-center gap-2">
                       <FileText size={16} /> COMPARATIVO
                     </button>
                   )}
