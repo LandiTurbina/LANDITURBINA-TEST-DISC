@@ -45,7 +45,7 @@ export async function isAdminConfigured() {
 }
 
 export async function setupAdminPassword(password: string) {
-  if (await isAdminConfigured()) throw new Error("Senha administrativa ja configurada.");
+  if (await isAdminConfigured()) throw new Error("Senha administrativa já configurada.");
   if (password.length < 10) throw new Error("Use uma senha com pelo menos 10 caracteres.");
 
   await getAdminDb().ref("adminAuth/password").set({

@@ -10,7 +10,7 @@ export async function POST(request: Request) {
     await createAdminSession();
     return NextResponse.json({ ok: true });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Nao foi possivel criar a senha.";
+    const message = error instanceof Error ? error.message : "Não foi possível criar a senha.";
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }

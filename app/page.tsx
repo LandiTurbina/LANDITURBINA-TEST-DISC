@@ -25,6 +25,14 @@ interface HistoricDelta {
 
 const emptyUser: LeadData = { nomeCompleto: '', telefone: '' };
 
+function nameInputValue(value: string) {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\p{L}\p{N}\s'-]/gu, '')
+    .toUpperCase();
+}
+
 function buildDelta(previousTest: DiscTestRecord, result: ReturnType<typeof calculateDiscResult>): HistoricDelta {
   return {
     D: result.percentages.D - previousTest.percentages.D,
@@ -106,14 +114,14 @@ export default function Home() {
       const params = new URLSearchParams({ name: normalizedDisplayName, phone: userData.telefone });
       const response = await fetch(`/api/tests/lookup?${params.toString()}`);
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || 'Erro ao buscar historico.');
+      if (!response.ok) throw new Error(payload.error || 'Erro ao buscar histórico.');
 
       const tests = (payload.tests || []) as DiscTestRecord[];
       setPreviousTests(tests);
       setSelectedPreviousId(tests[0]?.id || '');
       setAppState(tests.length ? 'history' : 'test');
     } catch (error) {
-      setLookupError(error instanceof Error ? error.message : 'Erro ao buscar historico.');
+      setLookupError(error instanceof Error ? error.message : 'Erro ao buscar histórico.');
     } finally {
       setLookupLoading(false);
     }
@@ -200,7 +208,7 @@ export default function Home() {
               <div className="space-y-5">
                 <label className="block">
                   <span className="text-xs font-mono text-foreground/50 uppercase">Nome completo</span>
-                  <input type="text" required value={userData.nomeCompleto} onChange={(e) => setUserData({ ...userData, nomeCompleto: normalizeName(e.target.value) })} className="mt-2 w-full bg-[#111111] border border-border rounded-lg outline-none px-4 py-3 text-white focus:border-primary/60 focus:ring-1 focus:ring-primary/60 transition-all font-medium uppercase" placeholder="NOME COMPLETO" />
+                  <input type="text" required value={userData.nomeCompleto} onChange={(e) => setUserData({ ...userData, nomeCompleto: nameInputValue(e.target.value) })} onBlur={() => setUserData({ ...userData, nomeCompleto: normalizedDisplayName })} className="mt-2 w-full bg-[#111111] border border-border rounded-lg outline-none px-4 py-3 text-white focus:border-primary/60 focus:ring-1 focus:ring-primary/60 transition-all font-medium uppercase" placeholder="NOME COMPLETO" />
                 </label>
                 <label className="block">
                   <span className="text-xs font-mono text-foreground/50 uppercase">Telefone</span>
@@ -262,7 +270,7 @@ export default function Home() {
                   <h1 className="font-display font-bold text-xl leading-none">TESTE DE PERFIL</h1>
                   <p className="text-xs font-mono text-foreground/45 mt-1">{normalizedDisplayName}</p>
                 </div>
-                <span className="text-xs font-mono text-foreground/50">{progressPercent}% CONCLUIDO</span>
+                <span className="text-xs font-mono text-foreground/50">{progressPercent}% CONCLUÍDO</span>
               </div>
               <div className="w-full h-1 bg-white/5 relative overflow-hidden">
                 <motion.div initial={{ width: 0 }} animate={{ width: `${progressPercent}%` }} className="absolute inset-y-0 left-0 bg-primary" />

@@ -10,6 +10,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ test: saved });
   } catch (error) {
     console.error("Save test error", error);
-    return NextResponse.json({ error: "Nao foi possivel salvar o teste." }, { status: 500 });
+    return NextResponse.json({ error: "Não foi possível salvar o teste." }, { status: 500 });
   }
 }

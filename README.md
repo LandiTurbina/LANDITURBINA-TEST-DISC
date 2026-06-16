@@ -15,7 +15,7 @@ View your app in AI Studio: https://ai.studio/apps/8e7f7908-ae6a-4e07-8bba-20c5d
 
 1. Install dependencies:
    `npm install`
-2. Configure `.env.local` using [.env.example](.env.example). The app needs Firebase Admin credentials and `ADMIN_SESSION_SECRET` for secure server-side reads/writes and `/admin`.
+2. Configure `.env.local` using [.env.example](.env.example). The Firebase web config is already in the project; `ADMIN_SESSION_SECRET` protects the `/admin` session.
 3. Run the app:
    `npm run dev`
 

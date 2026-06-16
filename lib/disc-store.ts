@@ -86,14 +86,14 @@ export async function saveDiscTest(input: DiscTestInput) {
   const normalizedNameKey = normalizeNameKey(input.user.nomeCompleto);
 
   if (!phoneDigits || !normalizedNameKey) {
-    throw new Error("Nome completo e telefone sao obrigatorios.");
+    throw new Error("Nome completo e telefone são obrigatórios.");
   }
 
   const now = new Date().toISOString();
   const ref = db.ref("discTests").push();
   const testId = ref.key;
 
-  if (!testId) throw new Error("Nao foi possivel gerar o ID do teste.");
+  if (!testId) throw new Error("Não foi possível gerar o ID do teste.");
 
   const record = {
     timestamp: now,

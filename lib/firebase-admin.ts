@@ -1,25 +1,47 @@
 import "server-only";
 
-import { cert, getApps, initializeApp } from "firebase-admin/app";
-import { getDatabase } from "firebase-admin/database";
+import { getApp, getApps, initializeApp } from "firebase/app";
+import {
+  getDatabase,
+  get,
+  push,
+  ref as databaseRef,
+  set,
+  update,
+  type DatabaseReference,
+} from "firebase/database";
 
-const databaseURL = process.env.FIREBASE_DATABASE_URL || "https://landimentoria-default-rtdb.firebaseio.com";
+const firebaseConfig = {
+  apiKey: "AIzaSyCKIekIOjBRWGwzWm67-rYLw1xwWXOc6F8",
+  authDomain: "landimentoria.firebaseapp.com",
+  databaseURL: "https://landimentoria-default-rtdb.firebaseio.com",
+  projectId: "landimentoria",
+  storageBucket: "landimentoria.firebasestorage.app",
+  messagingSenderId: "352587122829",
+  appId: "1:352587122829:web:c9097b32396887844dbac4",
+};
+
+function getFirebaseDatabase() {
+  const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+  return getDatabase(app);
+}
+
+function wrapRef(firebaseRef: DatabaseReference) {
+  return {
+    key: firebaseRef.key,
+    get: () => get(firebaseRef),
+    set: (value: unknown) => set(firebaseRef, value),
+    update: (value: Record<string, unknown>) => update(firebaseRef, value),
+    push: () => wrapRef(push(firebaseRef)),
+  };
+}
 
 export function getAdminDb() {
-  if (!getApps().length) {
-    const projectId = process.env.FIREBASE_PROJECT_ID;
-    const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-    const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n");
+  const database = getFirebaseDatabase();
 
-    if (!projectId || !clientEmail || !privateKey) {
-      throw new Error("Firebase Admin nao configurado. Defina FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL e FIREBASE_PRIVATE_KEY.");
-    }
-
-    initializeApp({
-      credential: cert({ projectId, clientEmail, privateKey }),
-      databaseURL,
-    });
-  }
-
-  return getDatabase();
+  return {
+    ref(path = "") {
+      return wrapRef(databaseRef(database, path));
+    },
+  };
 }

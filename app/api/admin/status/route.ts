@@ -9,6 +9,6 @@ export async function GET() {
     return NextResponse.json({ setupRequired: !configured, authenticated });
   } catch (error) {
     console.error("Admin status error", error);
-    return NextResponse.json({ error: "Admin nao configurado no servidor." }, { status: 500 });
+    return NextResponse.json({ error: "Admin não configurado no servidor." }, { status: 500 });
   }
 }

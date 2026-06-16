@@ -28,6 +28,6 @@ export async function GET(request: Request) {
     return NextResponse.json({ tests: summaries });
   } catch (error) {
     console.error("Lookup error", error);
-    return NextResponse.json({ error: "Nao foi possivel buscar testes anteriores." }, { status: 500 });
+    return NextResponse.json({ error: "Não foi possível buscar testes anteriores." }, { status: 500 });
   }
 }
