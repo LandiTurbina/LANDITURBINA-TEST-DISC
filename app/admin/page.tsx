@@ -1,18 +1,25 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Calendar, LockKeyhole, LogOut, Search } from 'lucide-react';
+import { Calendar, Eye, EyeOff, KeyRound, LockKeyhole, LogOut, Mail, Search } from 'lucide-react';
 import type { DiscTestRecord } from '@/lib/disc-types';
 import { formatDateTime, onlyDigits } from '@/lib/normalization';
 import { cn } from '@/lib/utils';
 
-type AuthState = 'loading' | 'setup' | 'login' | 'ready' | 'error';
+type AuthState = 'loading' | 'setup' | 'login' | 'reset' | 'ready' | 'error';
 type SortMode = 'newest' | 'oldest';
 
 export default function AdminPage() {
   const [authState, setAuthState] = useState<AuthState>('loading');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [recoveryCode, setRecoveryCode] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [capsLockOn, setCapsLockOn] = useState(false);
   const [message, setMessage] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
+  const [recoveryNotice, setRecoveryNotice] = useState('');
   const [tests, setTests] = useState<DiscTestRecord[]>([]);
   const [query, setQuery] = useState('');
   const [fromDate, setFromDate] = useState('');
@@ -61,11 +68,18 @@ export default function AdminPage() {
 
   async function submitPassword() {
     setMessage('');
+    setSuccessMessage('');
+
+    if ((authState === 'setup' || authState === 'reset') && password !== confirmPassword) {
+      setMessage('As senhas não conferem.');
+      return;
+    }
+
     const endpoint = authState === 'setup' ? '/api/admin/setup' : '/api/admin/login';
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password }),
+      body: JSON.stringify({ email, password }),
     });
     const payload = await response.json();
 
@@ -74,9 +88,43 @@ export default function AdminPage() {
       return;
     }
 
+    if (authState === 'setup' && payload.recoveryCode) {
+      setRecoveryNotice(`Guarde este código de recuperação em local seguro: ${payload.recoveryCode}`);
+    }
+
+    setEmail(payload.email || email);
     setPassword('');
+    setConfirmPassword('');
     setAuthState('ready');
     await loadTests();
+  }
+
+  async function submitResetPassword() {
+    setMessage('');
+    setSuccessMessage('');
+
+    if (password !== confirmPassword) {
+      setMessage('As senhas não conferem.');
+      return;
+    }
+
+    const response = await fetch('/api/admin/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, recoveryCode, password }),
+    });
+    const payload = await response.json();
+
+    if (!response.ok) {
+      setMessage(payload.error || 'Não foi possível redefinir a senha.');
+      return;
+    }
+
+    setPassword('');
+    setConfirmPassword('');
+    setRecoveryCode('');
+    setSuccessMessage('Senha redefinida. Entre com sua nova senha.');
+    setAuthState('login');
   }
 
   async function logout() {
@@ -111,6 +159,23 @@ export default function AdminPage() {
   }, [fromDate, query, sortMode, tests, toDate]);
 
   if (authState !== 'ready') {
+    const isSetup = authState === 'setup';
+    const isReset = authState === 'reset';
+    const authTitle = isSetup ? 'CRIAR CONTA MASTER' : isReset ? 'REDEFINIR SENHA' : authState === 'loading' ? 'CARREGANDO' : 'ACESSO RESTRITO';
+    const authDescription = isSetup
+      ? 'Primeiro acesso: cadastre o e-mail e a senha da conta admin master. Depois disso, novos cadastros ficam bloqueados.'
+      : isReset
+        ? 'Use o e-mail admin master e o código de recuperação criado no primeiro acesso.'
+        : 'Entre com o e-mail e a senha da conta admin master.';
+    const canSubmit =
+      authState === 'login'
+        ? Boolean(email.trim() && password)
+        : isSetup
+          ? Boolean(email.trim() && password.length >= 8 && confirmPassword.length >= 8)
+          : isReset
+            ? Boolean(email.trim() && recoveryCode.trim() && password.length >= 8 && confirmPassword.length >= 8)
+            : false;
+
     return (
       <main className="min-h-[100dvh] bg-background text-foreground flex items-center justify-center p-6">
         <section className="w-full max-w-md border border-border bg-panel/40 rounded-xl p-8">
@@ -119,19 +184,63 @@ export default function AdminPage() {
             <span className="text-xs font-mono uppercase tracking-widest">Admin Landi Turbina</span>
           </div>
           <h1 className="font-display text-3xl font-bold text-white mb-2">
-            {authState === 'setup' ? 'CRIAR SENHA' : authState === 'loading' ? 'CARREGANDO' : 'ACESSO RESTRITO'}
+            {authTitle}
           </h1>
           <p className="text-sm text-foreground/60 mb-7">
-            {authState === 'setup' ? 'Primeiro acesso: crie uma senha forte para proteger os resultados.' : 'Digite a senha administrativa para visualizar os resultados.'}
+            {authDescription}
           </p>
           {authState !== 'loading' && authState !== 'error' && (
             <div className="space-y-4">
-              <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} onKeyDown={(event) => event.key === 'Enter' && void submitPassword()} className="w-full bg-[#111111] border border-border rounded-lg outline-none px-4 py-3 text-white focus:border-primary/60 focus:ring-1 focus:ring-primary/60" placeholder="Senha" />
-              <button onClick={submitPassword} disabled={password.length < (authState === 'setup' ? 10 : 1)} className="w-full py-3 rounded-lg bg-primary text-white font-display font-medium disabled:opacity-50 disabled:cursor-not-allowed">
-                {authState === 'setup' ? 'CRIAR E ENTRAR' : 'ENTRAR'}
+              <label className="relative block">
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-foreground/35" size={18} />
+                <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} className="w-full bg-[#111111] border border-border rounded-lg outline-none pl-10 pr-4 py-3 text-white focus:border-primary/60 focus:ring-1 focus:ring-primary/60" placeholder="E-mail admin" autoComplete="email" />
+              </label>
+
+              {isReset && (
+                <label className="relative block">
+                  <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 text-foreground/35" size={18} />
+                  <input type="text" value={recoveryCode} onChange={(event) => setRecoveryCode(event.target.value.toUpperCase())} className="w-full bg-[#111111] border border-border rounded-lg outline-none pl-10 pr-4 py-3 text-white uppercase focus:border-primary/60 focus:ring-1 focus:ring-primary/60" placeholder="Código de recuperação" autoComplete="one-time-code" />
+                </label>
+              )}
+
+              <label className="relative block">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  onKeyUp={(event) => setCapsLockOn(event.getModifierState('CapsLock'))}
+                  onKeyDown={(event) => {
+                    setCapsLockOn(event.getModifierState('CapsLock'));
+                    if (event.key === 'Enter') void (isReset ? submitResetPassword() : submitPassword());
+                  }}
+                  className="w-full bg-[#111111] border border-border rounded-lg outline-none px-4 py-3 pr-12 text-white focus:border-primary/60 focus:ring-1 focus:ring-primary/60"
+                  placeholder={isReset ? 'Nova senha' : 'Senha'}
+                  autoComplete={isSetup ? 'new-password' : 'current-password'}
+                />
+                <button type="button" onClick={() => setShowPassword((value) => !value)} className="absolute right-3 top-1/2 -translate-y-1/2 text-foreground/50 hover:text-white" aria-label={showPassword ? 'Ocultar senha' : 'Exibir senha'}>
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </label>
+
+              {(isSetup || isReset) && (
+                <input type={showPassword ? 'text' : 'password'} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} onKeyUp={(event) => setCapsLockOn(event.getModifierState('CapsLock'))} className="w-full bg-[#111111] border border-border rounded-lg outline-none px-4 py-3 text-white focus:border-primary/60 focus:ring-1 focus:ring-primary/60" placeholder="Confirmar senha" autoComplete="new-password" />
+              )}
+
+              {capsLockOn && <p className="text-xs font-mono text-primary uppercase">Caps Lock está ligado.</p>}
+              {(isSetup || isReset) && <p className="text-xs text-foreground/45">A senha precisa ter pelo menos 8 caracteres.</p>}
+
+              <button onClick={isReset ? submitResetPassword : submitPassword} disabled={!canSubmit} className="w-full py-3 rounded-lg bg-primary text-white font-display font-medium disabled:opacity-50 disabled:cursor-not-allowed">
+                {isSetup ? 'CRIAR CONTA MASTER' : isReset ? 'REDEFINIR SENHA' : 'ENTRAR'}
               </button>
+
+              {!isSetup && (
+                <button type="button" onClick={() => { setMessage(''); setSuccessMessage(''); setAuthState(isReset ? 'login' : 'reset'); }} className="w-full text-sm text-foreground/60 hover:text-white">
+                  {isReset ? 'Voltar para o login' : 'Esqueci minha senha'}
+                </button>
+              )}
             </div>
           )}
+          {successMessage && <p className="mt-5 text-sm text-green-400">{successMessage}</p>}
           {message && <p className="mt-5 text-sm text-red-400">{message}</p>}
         </section>
       </main>
@@ -153,6 +262,16 @@ export default function AdminPage() {
       </header>
 
       <section className="mx-auto max-w-7xl px-4 py-6">
+        {recoveryNotice && (
+          <div className="mb-6 rounded-lg border border-primary/40 bg-primary/10 p-4 text-sm text-white">
+            <p className="font-display text-base font-semibold">Conta master criada.</p>
+            <p className="mt-1 text-foreground/80">{recoveryNotice}</p>
+            <button onClick={() => setRecoveryNotice('')} className="mt-3 text-xs font-mono uppercase text-primary hover:text-white">
+              Já guardei o código
+            </button>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_180px_180px_170px] gap-3 mb-6">
           <label className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-foreground/35" size={18} />

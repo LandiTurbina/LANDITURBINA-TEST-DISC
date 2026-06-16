@@ -1,18 +1,18 @@
 import { NextResponse } from "next/server";
-import { createAdminSession, validateAdminPassword } from "@/lib/admin-auth";
+import { createAdminSession, validateAdminLogin } from "@/lib/admin-auth";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   try {
-    const { password } = await request.json();
-    const valid = await validateAdminPassword(password || "");
+    const { email, password } = await request.json();
+    const valid = await validateAdminLogin(email || "", password || "");
 
     if (!valid) {
-      return NextResponse.json({ error: "Senha inválida." }, { status: 401 });
+      return NextResponse.json({ error: "E-mail ou senha inválidos." }, { status: 401 });
     }
 
-    await createAdminSession();
+    await createAdminSession(email || "");
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error("Admin login error", error);
