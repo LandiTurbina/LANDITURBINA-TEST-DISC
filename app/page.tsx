@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { CalendarDays, Download, FileText, Search, UserRound } from 'lucide-react';
+import { CalendarDays, Download, FileText, Search, TrendingUp, UserRound } from 'lucide-react';
 import Image from 'next/image';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
@@ -13,17 +13,15 @@ import { cn } from '@/lib/utils';
 
 type AppState = 'splash' | 'onboarding' | 'history' | 'test' | 'completed';
 
-interface HistoricDelta {
-  D: number;
-  I: number;
-  S: number;
-  C: number;
-  changedProfile: { from: string; to: string } | null;
-  previousDate: string;
-  previousTest: DiscTestRecord;
-}
+type ComparableTest = Pick<DiscTestRecord, 'id' | 'timestamp' | 'leadData' | 'phoneDigits' | 'percentages' | 'primaryProfile' | 'secondaryProfile'>;
 
 const emptyUser: LeadData = { nomeCompleto: '', telefone: '' };
+const factorLabels: Record<Factor, string> = {
+  D: 'Executor',
+  I: 'Comunicador',
+  S: 'Planejador',
+  C: 'Analista',
+};
 
 function nameInputValue(value: string) {
   return value
@@ -33,31 +31,34 @@ function nameInputValue(value: string) {
     .toUpperCase();
 }
 
-function buildDelta(previousTest: DiscTestRecord, result: ReturnType<typeof calculateDiscResult>): HistoricDelta {
+function sortOldest(tests: ComparableTest[]) {
+  return [...tests].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+}
+
+function buildFactorDelta(previousTest: ComparableTest, result: ReturnType<typeof calculateDiscResult>) {
   return {
     D: result.percentages.D - previousTest.percentages.D,
     I: result.percentages.I - previousTest.percentages.I,
     S: result.percentages.S - previousTest.percentages.S,
     C: result.percentages.C - previousTest.percentages.C,
-    changedProfile:
-      previousTest.primaryProfile !== result.primaryProfile
-        ? { from: previousTest.primaryProfile, to: result.primaryProfile }
-        : null,
-    previousDate: formatDateTime(previousTest.timestamp),
-    previousTest,
   };
+}
+
+function deltaText(value: number) {
+  if (value > 0) return `+${value}`;
+  if (value < 0) return `${value}`;
+  return '=';
 }
 
 export default function Home() {
   const [appState, setAppState] = useState<AppState>('splash');
   const [userData, setUserData] = useState<LeadData>(emptyUser);
   const [answers, setAnswers] = useState<Record<string, Record<Factor, number | null>>>({});
-  const [previousTests, setPreviousTests] = useState<DiscTestRecord[]>([]);
-  const [selectedPreviousId, setSelectedPreviousId] = useState<string>('');
+  const [previousTests, setPreviousTests] = useState<ComparableTest[]>([]);
+  const [comparisonTests, setComparisonTests] = useState<ComparableTest[]>([]);
   const [lookupLoading, setLookupLoading] = useState(false);
   const [lookupError, setLookupError] = useState('');
   const [testResult, setTestResult] = useState<ReturnType<typeof calculateDiscResult> | null>(null);
-  const [historicDelta, setHistoricDelta] = useState<HistoricDelta | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const resultRef = useRef<HTMLDivElement>(null);
   const comparisonRef = useRef<HTMLDivElement>(null);
@@ -70,7 +71,8 @@ export default function Home() {
   }, []);
 
   const normalizedDisplayName = normalizeName(userData.nomeCompleto);
-  const selectedPreviousTest = previousTests.find((test) => test.id === selectedPreviousId) || null;
+  const baselineTest = previousTests.length ? sortOldest(previousTests)[0] : null;
+  const currentDelta = baselineTest && testResult ? buildFactorDelta(baselineTest, testResult) : null;
 
   useEffect(() => {
     if (appState === 'splash') {
@@ -116,9 +118,9 @@ export default function Home() {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || 'Erro ao buscar histórico.');
 
-      const tests = (payload.tests || []) as DiscTestRecord[];
+      const tests = sortOldest((payload.tests || []) as ComparableTest[]);
       setPreviousTests(tests);
-      setSelectedPreviousId(tests[0]?.id || '');
+      setComparisonTests([]);
       setAppState(tests.length ? 'history' : 'test');
     } catch (error) {
       setLookupError(error instanceof Error ? error.message : 'Erro ao buscar histórico.');
@@ -134,7 +136,6 @@ export default function Home() {
     try {
       const finalAnswers = answers as Record<string, Record<Factor, number>>;
       const result = calculateDiscResult(finalAnswers);
-      const delta = selectedPreviousTest ? buildDelta(selectedPreviousTest, result) : null;
 
       const response = await fetch('/api/tests', {
         method: 'POST',
@@ -148,7 +149,18 @@ export default function Home() {
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || 'Erro ao gravar os dados.');
 
-      setHistoricDelta(delta);
+      const savedTest = payload.test as ComparableTest | undefined;
+      const fallbackCurrentTest: ComparableTest = {
+        id: `current_${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        leadData: { nomeCompleto: normalizedDisplayName, telefone: userData.telefone },
+        phoneDigits: onlyDigits(userData.telefone),
+        percentages: result.percentages,
+        primaryProfile: result.primaryProfile,
+        secondaryProfile: result.secondaryProfile,
+      };
+
+      setComparisonTests(sortOldest([...previousTests, savedTest || fallbackCurrentTest]));
       setTestResult(result);
       setAppState('completed');
     } catch (error) {
@@ -189,6 +201,7 @@ export default function Home() {
   };
 
   const validOnboarding = normalizedDisplayName.length >= 5 && onlyDigits(userData.telefone).length >= 10;
+  const hasComparison = comparisonTests.length > 1;
 
   return (
     <main className="min-h-[100dvh] w-full flex flex-col bg-background text-foreground font-sans selection:bg-primary selection:text-white">
@@ -231,18 +244,20 @@ export default function Home() {
                 <div>
                   <p className="text-xs font-mono text-primary uppercase tracking-widest">Histórico encontrado</p>
                   <h2 className="font-display text-3xl font-bold text-white mt-1">{normalizedDisplayName}</h2>
-                  <p className="text-sm text-foreground/55 mt-2">Escolha um teste anterior para comparar com o novo resultado.</p>
+                  <p className="text-sm text-foreground/55 mt-2">
+                    Encontramos {previousTests.length} teste(s) anterior(es). Ao finalizar o novo teste, o comparativo será gerado automaticamente por data, usando todo o histórico desde o primeiro registro.
+                  </p>
                 </div>
                 <button onClick={() => setAppState('test')} className="px-5 py-3 rounded-lg bg-primary text-white font-display text-sm font-medium">INICIAR TESTE</button>
               </div>
               <div className="space-y-3 max-h-[50vh] overflow-auto pr-1">
-                {previousTests.map((test) => {
+                {previousTests.map((test, index) => {
                   const phoneChanged = test.phoneDigits && test.phoneDigits !== onlyDigits(userData.telefone);
                   return (
-                    <button key={test.id} onClick={() => setSelectedPreviousId(test.id)} className={cn('w-full text-left rounded-lg border p-4 transition-all', selectedPreviousId === test.id ? 'border-primary bg-primary/10' : 'border-border bg-black/20 hover:border-white/25')}>
+                    <div key={test.id} className="w-full rounded-lg border border-border bg-black/20 p-4">
                       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                         <div>
-                          <p className="font-display text-lg text-white">{test.primaryProfile} + {test.secondaryProfile}</p>
+                          <p className="font-display text-lg text-white">#{index + 1} - {test.primaryProfile} + {test.secondaryProfile}</p>
                           <p className="text-xs font-mono text-foreground/50 mt-1">{formatDateTime(test.timestamp)} | {test.leadData.telefone || test.phoneDigits}</p>
                         </div>
                         <div className="flex gap-2 text-xs font-mono text-foreground/70">
@@ -253,11 +268,10 @@ export default function Home() {
                         </div>
                       </div>
                       {phoneChanged && <p className="text-xs text-primary mt-3">Telefone novo detectado. Ao salvar, o cadastro por nome passa a apontar para o telefone informado agora.</p>}
-                    </button>
+                    </div>
                   );
                 })}
               </div>
-              <button onClick={() => setSelectedPreviousId('')} className="mt-5 text-sm text-foreground/60 hover:text-white">Continuar sem comparar</button>
             </div>
           </motion.section>
         )}
@@ -339,7 +353,7 @@ export default function Home() {
                   <button onClick={() => downloadElementAsPDF(resultRef.current, `Landi_${normalizedDisplayName.replace(/\s+/g, '_')}.pdf`)} className="bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded-lg px-4 py-2 font-display text-sm font-medium transition-all flex items-center gap-2">
                     <Download size={16} /> RELATÓRIO
                   </button>
-                  {historicDelta && (
+                  {hasComparison && (
                     <button onClick={() => downloadElementAsPDF(comparisonRef.current, `Comparativo_${normalizedDisplayName.replace(/\s+/g, '_')}.pdf`)} className="bg-primary hover:bg-primary/90 text-white rounded-lg px-4 py-2 font-display text-sm font-medium transition-all flex items-center gap-2">
                       <FileText size={16} /> COMPARATIVO
                     </button>
@@ -359,8 +373,8 @@ export default function Home() {
                     {(['D', 'I', 'S', 'C'] as Factor[]).map((factor) => (
                       <div key={factor} className="bg-panel/30 border border-border p-4 rounded-lg flex flex-col items-center relative">
                         <span className="text-lg font-mono font-medium text-white">{testResult.percentages[factor]}%</span>
-                        <span className="text-[10px] uppercase text-foreground/50 tracking-widest mt-1">{factor}</span>
-                        {historicDelta && <span className={cn('absolute top-2 right-2 text-[10px] font-mono', historicDelta[factor] > 0 ? 'text-green-500' : historicDelta[factor] < 0 ? 'text-red-500' : 'text-white/30')}>{historicDelta[factor] > 0 ? `+${historicDelta[factor]}` : historicDelta[factor] < 0 ? historicDelta[factor] : '='}</span>}
+                        <span className="text-[10px] uppercase text-foreground/50 tracking-widest mt-1">{factorLabels[factor]}</span>
+                        {currentDelta && <span className={cn('absolute top-2 right-2 text-[10px] font-mono', currentDelta[factor] > 0 ? 'text-green-500' : currentDelta[factor] < 0 ? 'text-red-500' : 'text-white/30')}>{deltaText(currentDelta[factor])}</span>}
                       </div>
                     ))}
                   </div>
@@ -377,7 +391,14 @@ export default function Home() {
                     <div className="absolute top-0 left-0 w-1 h-full bg-primary rounded-l-xl" />
                     <p className="text-lg md:text-xl text-foreground font-medium leading-relaxed">&quot;{testResult.reportCopy}&quot;</p>
                   </div>
-                  {historicDelta && <ComparisonBlock refProp={comparisonRef} normalizedDisplayName={normalizedDisplayName} testResult={testResult} historicDelta={historicDelta} />}
+                  {hasComparison ? (
+                    <ComparisonBlock refProp={comparisonRef} normalizedDisplayName={normalizedDisplayName} comparisonTests={comparisonTests} />
+                  ) : (
+                    <div className="bg-panel/50 border border-border p-6 rounded-xl">
+                      <h4 className="text-xs font-mono text-foreground/50 uppercase tracking-widest mb-2">Primeiro registro</h4>
+                      <p className="text-sm text-foreground/75">Este é o primeiro teste DISC localizado para este cadastro. O próximo resultado já terá comparativo completo por data.</p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -388,41 +409,106 @@ export default function Home() {
   );
 }
 
-function ComparisonBlock({ refProp, normalizedDisplayName, testResult, historicDelta }: { refProp: React.RefObject<HTMLDivElement | null>; normalizedDisplayName: string; testResult: ReturnType<typeof calculateDiscResult>; historicDelta: HistoricDelta }) {
+function ComparisonBlock({ refProp, normalizedDisplayName, comparisonTests }: { refProp: React.RefObject<HTMLDivElement | null>; normalizedDisplayName: string; comparisonTests: ComparableTest[] }) {
+  const orderedTests = sortOldest(comparisonTests);
+  const first = orderedTests[0];
+  const previous = orderedTests[orderedTests.length - 2];
+  const current = orderedTests[orderedTests.length - 1];
+  const totalDelta = buildFactorDelta(first, {
+    percentages: current.percentages,
+  } as ReturnType<typeof calculateDiscResult>);
+  const lastDelta = buildFactorDelta(previous, {
+    percentages: current.percentages,
+  } as ReturnType<typeof calculateDiscResult>);
+  const biggestShift = (Object.keys(totalDelta) as Factor[]).sort((a, b) => Math.abs(totalDelta[b]) - Math.abs(totalDelta[a]))[0];
+  const profileChanges = orderedTests.reduce((acc, test, index) => {
+    if (index === 0) return acc;
+    return orderedTests[index - 1].primaryProfile !== test.primaryProfile ? acc + 1 : acc;
+  }, 0);
+
   return (
     <div ref={refProp} className="bg-panel/50 border border-border p-6 rounded-xl relative overflow-hidden">
-      <div className="flex items-start gap-3 mb-4">
+      <div className="flex items-start gap-3 mb-5">
         <CalendarDays className="text-primary mt-0.5" size={18} />
         <div>
-          <h4 className="text-xs font-mono text-foreground/50 uppercase tracking-widest">COMPARATIVO DE PERFORMANCE</h4>
+          <h4 className="text-xs font-mono text-foreground/50 uppercase tracking-widest">Comparativo histórico completo</h4>
           <p className="text-sm text-white mt-1">{normalizedDisplayName}</p>
-          <p className="text-xs text-foreground/50">Teste anterior: {historicDelta.previousDate}</p>
+          <p className="text-xs text-foreground/50">
+            {orderedTests.length} testes analisados entre {formatDateTime(first.timestamp)} e {formatDateTime(current.timestamp)}.
+          </p>
         </div>
       </div>
-      {historicDelta.changedProfile ? (
-        <p className="text-sm md:text-base text-foreground/90 font-medium border-l-2 border-primary pl-3">
-          Perfil primário alterado de <span className="text-white font-bold">{historicDelta.changedProfile.from}</span> para <span className="text-primary font-bold">{historicDelta.changedProfile.to}</span>.
+
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-5">
+        <SummaryCard label="Total de testes" value={`${orderedTests.length}`} detail="inclui o resultado atual" />
+        <SummaryCard label="Perfil inicial" value={first.primaryProfile} detail={`${first.secondaryProfile} como apoio`} />
+        <SummaryCard label="Perfil atual" value={current.primaryProfile} detail={`${current.secondaryProfile} como apoio`} />
+        <SummaryCard label="Trocas de perfil" value={`${profileChanges}`} detail="mudanças de perfil primário" />
+      </div>
+
+      <div className="rounded-lg border border-white/10 bg-black/25 p-4 mb-5">
+        <div className="flex items-center gap-2 mb-3">
+          <TrendingUp size={16} className="text-primary" />
+          <h5 className="font-display text-sm text-white uppercase">Leitura da evolução</h5>
+        </div>
+        <p className="text-sm text-foreground/80 leading-relaxed">
+          Desde o primeiro teste, o eixo com maior movimentação foi <span className="font-bold text-white">{factorLabels[biggestShift]}</span>, com variação de <span className={cn('font-bold', totalDelta[biggestShift] > 0 ? 'text-green-500' : totalDelta[biggestShift] < 0 ? 'text-red-500' : 'text-white')}>{deltaText(totalDelta[biggestShift])} p.p.</span>. No comparativo mais recente, o perfil saiu de <span className="font-bold text-white">{previous.primaryProfile}</span> para <span className="font-bold text-primary">{current.primaryProfile}</span>{previous.primaryProfile === current.primaryProfile ? ', mantendo o mesmo eixo principal.' : ', indicando mudança no eixo principal.'}
         </p>
-      ) : (
-        <p className="text-sm md:text-base text-foreground/90 font-medium border-l-2 border-white/20 pl-3">
-          Perfil primário mantido em <span className="text-white font-bold">{testResult.primaryProfile}</span>.
-        </p>
-      )}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-5">
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
         {(['D', 'I', 'S', 'C'] as Factor[]).map((factor) => (
           <div key={factor} className="rounded-lg bg-black/30 border border-white/10 p-3">
-            <p className="text-xs font-mono text-foreground/45">{factor}</p>
-            <p className="text-lg font-mono text-white">{testResult.percentages[factor]}%</p>
-            <p className={cn('text-xs font-mono', historicDelta[factor] > 0 ? 'text-green-500' : historicDelta[factor] < 0 ? 'text-red-500' : 'text-foreground/45')}>
-              {historicDelta[factor] > 0 ? `+${historicDelta[factor]}` : historicDelta[factor] < 0 ? historicDelta[factor] : '='} p.p.
+            <p className="text-xs font-mono text-foreground/45">{factorLabels[factor]}</p>
+            <p className="text-sm text-foreground/60 mt-1">Primeiro: <span className="text-white font-mono">{first.percentages[factor]}%</span></p>
+            <p className="text-sm text-foreground/60">Atual: <span className="text-white font-mono">{current.percentages[factor]}%</span></p>
+            <p className={cn('text-xs font-mono mt-2', totalDelta[factor] > 0 ? 'text-green-500' : totalDelta[factor] < 0 ? 'text-red-500' : 'text-foreground/45')}>
+              Total {deltaText(totalDelta[factor])} p.p. | Último {deltaText(lastDelta[factor])} p.p.
             </p>
           </div>
         ))}
       </div>
+
+      <div className="overflow-x-auto rounded-lg border border-white/10">
+        <table className="w-full min-w-[620px] text-left text-sm">
+          <thead className="bg-white/[0.03] text-xs font-mono uppercase text-foreground/45">
+            <tr>
+              <th className="px-3 py-3">Data</th>
+              <th className="px-3 py-3">Perfil</th>
+              <th className="px-3 py-3">D</th>
+              <th className="px-3 py-3">I</th>
+              <th className="px-3 py-3">S</th>
+              <th className="px-3 py-3">C</th>
+            </tr>
+          </thead>
+          <tbody>
+            {orderedTests.map((test, index) => (
+              <tr key={test.id} className="border-t border-white/10">
+                <td className="px-3 py-3 font-mono text-foreground/70">{formatDateTime(test.timestamp)}</td>
+                <td className="px-3 py-3 text-white">{index + 1}. {test.primaryProfile} / {test.secondaryProfile}</td>
+                {(['D', 'I', 'S', 'C'] as Factor[]).map((factor) => (
+                  <td key={factor} className="px-3 py-3 font-mono text-foreground/80">{test.percentages[factor]}%</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
       <div className="mt-5 flex items-center gap-2 text-xs text-foreground/45">
         <UserRound size={14} />
-        Comparativo gerado a partir do teste selecionado no histórico.
+        Comparativo gerado automaticamente a partir de todos os testes encontrados por nome completo ou telefone.
       </div>
+    </div>
+  );
+}
+
+function SummaryCard({ label, value, detail }: { label: string; value: string; detail: string }) {
+  return (
+    <div className="rounded-lg bg-black/30 border border-white/10 p-3">
+      <p className="text-[10px] font-mono uppercase tracking-widest text-foreground/45">{label}</p>
+      <p className="text-lg font-display font-bold text-white mt-1">{value}</p>
+      <p className="text-xs text-foreground/45 mt-1">{detail}</p>
     </div>
   );
 }
