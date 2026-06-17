@@ -82,11 +82,10 @@ export async function findTestsByLead(user: LeadData) {
   const phoneDigits = onlyDigits(user.telefone);
   const tests = await listAllTests();
 
-  return tests.filter((test) => {
-    const samePhone = phoneDigits && test.phoneDigits === phoneDigits;
-    const sameName = nameKey && test.normalizedNameKey === nameKey;
-    return Boolean(samePhone || sameName);
-  });
+  const phoneMatches = phoneDigits ? tests.filter((test) => test.phoneDigits === phoneDigits) : [];
+  if (phoneMatches.length) return phoneMatches;
+
+  return tests.filter((test) => nameKey && test.normalizedNameKey === nameKey);
 }
 
 export async function saveDiscTest(input: DiscTestInput) {
@@ -120,13 +119,19 @@ export async function saveDiscTest(input: DiscTestInput) {
 
   await ref.set(record);
   try {
-    await db.ref(`users/${phoneDigits}/profile`).update({
+    const profileRef = db.ref(`users/${phoneDigits}/profile`);
+    const profileSnapshot = await profileRef.get();
+    const profile = profileSnapshot.exists() ? profileSnapshot.val() : {};
+
+    await profileRef.update({
       nomeCompleto: normalizedName,
       normalizedName,
       normalizedNameKey,
       phoneDigits,
       telefone: input.user.telefone,
+      firstTestAt: profile.firstTestAt || now,
       lastTestAt: now,
+      testCount: Number(profile.testCount || 0) + 1,
     });
   } catch (error) {
     console.warn("Teste salvo, mas não foi possível atualizar o perfil resumido.", error);

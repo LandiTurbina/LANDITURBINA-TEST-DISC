@@ -33,6 +33,12 @@ const factorColors: Record<Factor, string> = {
   S: '#383838',
   C: '#A3A3A3',
 };
+const quadrantColors: Record<Factor, string> = {
+  D: '#BC0F24',
+  I: '#C89B18',
+  S: '#0E8F4A',
+  C: '#2A37B8',
+};
 
 function nameInputValue(value: string) {
   return value
@@ -620,6 +626,7 @@ export default function Home() {
                     <p className="text-lg md:text-xl text-foreground font-medium leading-relaxed">&quot;{testResult.reportCopy}&quot;</p>
                   </div>
                   <DiscQuadrantMap percentages={testResult.percentages} />
+                  <BehavioralAxisPanel percentages={testResult.percentages} />
                 </div>
               </div>
               <div className="mt-10">
@@ -658,7 +665,7 @@ function DonutChart({ percentages, primaryProfile }: { percentages: Record<Facto
           {factors.map((factor) => {
             const value = percentages[factor];
             const endAngle = startAngle + value * 3.6;
-            const path = donutSegmentPath(100, 100, activeFactor === factor ? 87 : outerRadius, innerRadius, startAngle, endAngle);
+            const path = donutSegmentPath(100, 100, outerRadius, innerRadius, startAngle, endAngle);
             startAngle = endAngle;
             const segment = (
               <path
@@ -666,6 +673,8 @@ function DonutChart({ percentages, primaryProfile }: { percentages: Record<Facto
                 d={path}
                 fill={factorColors[factor]}
                 opacity={activeFactor && activeFactor !== factor ? 0.58 : 1}
+                stroke={activeFactor === factor ? 'rgba(255,255,255,0.45)' : 'rgba(11,11,11,0.6)'}
+                strokeWidth={activeFactor === factor ? 1.5 : 0.8}
                 className="cursor-pointer outline-none transition-opacity duration-200"
                 tabIndex={0}
                 onMouseEnter={() => setActiveFactor(factor)}
@@ -679,13 +688,13 @@ function DonutChart({ percentages, primaryProfile }: { percentages: Record<Facto
           })}
           <circle cx="100" cy="100" r={innerRadius - 1} fill="#0B0B0B" stroke="rgba(255,255,255,0.08)" strokeWidth="1" pointerEvents="none" />
         </svg>
-        <div className="absolute inset-[24%] rounded-full bg-background/95 border border-white/10 flex flex-col items-center justify-center text-center px-4">
+        <div className="pointer-events-none absolute inset-[24%] rounded-full bg-background/95 border border-white/10 flex flex-col items-center justify-center text-center px-4">
           <span className="text-4xl font-display font-bold text-white leading-none">{percentages[displayFactor]}%</span>
           <span className="text-xs uppercase font-mono text-primary mt-2 tracking-widest">{factorLabels[displayFactor]}</span>
           <span className="text-[10px] uppercase text-foreground/35 mt-1">{primaryProfile}</span>
         </div>
         {activeFactor && (
-          <div className="absolute right-0 top-3 w-44 rounded-lg border border-white/10 bg-[#101010]/95 p-3 text-left shadow-2xl backdrop-blur-sm">
+          <div className="pointer-events-none absolute right-0 top-3 w-44 rounded-lg border border-white/10 bg-[#101010]/95 p-3 text-left shadow-2xl backdrop-blur-sm">
             <div className="flex items-center justify-between gap-2">
               <span className="text-xs font-mono text-foreground/45">{activeFactor}</span>
               <span className="text-xs font-mono text-primary">{percentages[activeFactor]}%</span>
@@ -711,10 +720,10 @@ function DonutChart({ percentages, primaryProfile }: { percentages: Record<Facto
 
 function DiscQuadrantMap({ percentages }: { percentages: Record<Factor, number> }) {
   const quadrants: Array<{ factor: Factor; position: string; axis: string }> = [
-    { factor: 'D', position: 'col-start-1 row-start-1', axis: 'Ativo + tarefa' },
-    { factor: 'I', position: 'col-start-2 row-start-1', axis: 'Ativo + pessoas' },
-    { factor: 'C', position: 'col-start-1 row-start-2', axis: 'Reflexivo + tarefa' },
-    { factor: 'S', position: 'col-start-2 row-start-2', axis: 'Reflexivo + pessoas' },
+    { factor: 'D', position: 'col-start-1 row-start-1', axis: 'Controle + assertividade' },
+    { factor: 'I', position: 'col-start-2 row-start-1', axis: 'Abertura + assertividade' },
+    { factor: 'C', position: 'col-start-1 row-start-2', axis: 'Controle + ponderação' },
+    { factor: 'S', position: 'col-start-2 row-start-2', axis: 'Abertura + ponderação' },
   ];
   const ranking = (['D', 'I', 'S', 'C'] as Factor[]).sort((a, b) => percentages[b] - percentages[a]);
   const dominant = ranking[0];
@@ -724,37 +733,38 @@ function DiscQuadrantMap({ percentages }: { percentages: Record<Factor, number> 
       <div className="flex items-center justify-between gap-3 mb-5">
         <div>
           <p className="text-xs font-mono uppercase tracking-widest text-primary">Mapa visual DISC</p>
-          <p className="text-sm text-foreground/55 mt-1">Quadrante com intensidade proporcional ao resultado.</p>
+          <p className="text-sm text-foreground/55 mt-1">Quadrantes por intensidade, com eixos de leitura comportamental.</p>
         </div>
         <span className="rounded-md border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-mono text-primary">{factorLabels[dominant]}</span>
       </div>
 
       <div className="grid grid-cols-[auto_1fr_auto] grid-rows-[auto_1fr_auto] gap-3">
-        <div className="col-start-2 row-start-1 text-center text-[10px] font-mono uppercase tracking-widest text-foreground/35">Ativo</div>
-        <div className="col-start-1 row-start-2 flex items-center text-[10px] font-mono uppercase tracking-widest text-foreground/35 [writing-mode:vertical-rl] rotate-180">Tarefa</div>
-        <div className="col-start-3 row-start-2 flex items-center text-[10px] font-mono uppercase tracking-widest text-foreground/35 [writing-mode:vertical-rl]">Pessoas</div>
-        <div className="col-start-2 row-start-3 text-center text-[10px] font-mono uppercase tracking-widest text-foreground/35">Reflexivo</div>
+        <div className="col-start-2 row-start-1 text-center text-[10px] font-mono uppercase tracking-widest text-foreground/45">Assertividade</div>
+        <div className="col-start-1 row-start-2 flex items-center text-[10px] font-mono uppercase tracking-widest text-foreground/45 [writing-mode:vertical-rl] rotate-180">Controle</div>
+        <div className="col-start-3 row-start-2 flex items-center text-[10px] font-mono uppercase tracking-widest text-foreground/45 [writing-mode:vertical-rl]">Abertura</div>
+        <div className="col-start-2 row-start-3 text-center text-[10px] font-mono uppercase tracking-widest text-foreground/45">Ponderação</div>
 
-        <div className="col-start-2 row-start-2 relative aspect-square overflow-hidden rounded-lg border border-white/10 bg-black/35">
-          <div className="absolute inset-x-0 top-1/2 h-px bg-white/15" />
-          <div className="absolute inset-y-0 left-1/2 w-px bg-white/15" />
-          <div className="absolute left-1/2 top-1/2 z-20 h-12 w-12 -translate-x-1/2 -translate-y-1/2 rounded-md border border-primary/35 bg-[#0B0B0B] flex items-center justify-center">
+        <div className="col-start-2 row-start-2 relative aspect-square overflow-hidden rounded-lg border border-white/10 bg-black/35 shadow-2xl shadow-black/30">
+          <div className="absolute inset-x-0 top-1/2 z-10 h-0.5 bg-white/45" />
+          <div className="absolute inset-y-0 left-1/2 z-10 w-0.5 bg-white/45" />
+          <div className="absolute left-1/2 top-1/2 z-20 h-14 w-14 -translate-x-1/2 -translate-y-1/2 rounded-md border border-white/20 bg-[#0B0B0B] flex items-center justify-center shadow-xl">
             <span className="text-xs font-display text-primary">DISC</span>
           </div>
 
           <div className="grid h-full w-full grid-cols-2 grid-rows-2">
             {quadrants.map(({ factor, position, axis }) => (
-              <div key={factor} className={cn('relative overflow-hidden p-3 md:p-4', position, dominant === factor ? 'ring-1 ring-inset ring-primary/60' : '')}>
-                <div className="absolute inset-0 opacity-10" style={{ background: factorColors[factor] }} />
-                <div className="absolute bottom-0 left-0 right-0 transition-all" style={{ height: `${Math.max(12, percentages[factor])}%`, background: factorColors[factor], opacity: dominant === factor ? 0.48 : 0.28 }} />
+              <div key={factor} className={cn('relative overflow-hidden p-3 md:p-4', position, dominant === factor ? 'ring-2 ring-inset ring-white/70' : '')}>
+                <div className="absolute inset-0" style={{ background: quadrantColors[factor], opacity: dominant === factor ? 0.88 : 0.62 }} />
+                <div className="absolute inset-x-0 bottom-0 bg-black/35" style={{ height: `${100 - Math.max(12, percentages[factor])}%` }} />
+                <div className="absolute inset-0 bg-gradient-to-br from-white/10 via-transparent to-black/30" />
                 <div className="relative z-10 flex h-full flex-col justify-between">
                   <div>
                     <p className="text-3xl md:text-4xl font-display font-bold text-white">{factor}</p>
-                    <p className="text-[10px] md:text-xs font-mono uppercase tracking-widest text-foreground/55">{factorLabels[factor]}</p>
+                    <p className="text-[10px] md:text-xs font-mono uppercase tracking-widest text-white/75">{factorLabels[factor]}</p>
                   </div>
                   <div>
                     <p className="font-mono text-lg text-white">{percentages[factor]}%</p>
-                    <p className="text-[10px] leading-snug text-foreground/45">{axis}</p>
+                    <p className="text-[10px] leading-snug text-white/70">{axis}</p>
                   </div>
                 </div>
               </div>
@@ -778,6 +788,50 @@ function DiscQuadrantMap({ percentages }: { percentages: Record<Factor, number> 
   );
 }
 
+function BehavioralAxisPanel({ percentages }: { percentages: Record<Factor, number> }) {
+  const assertiveness = percentages.D + percentages.I;
+  const ponderation = percentages.S + percentages.C;
+  const control = percentages.D + percentages.C;
+  const openness = percentages.I + percentages.S;
+  const decisionTilt = assertiveness >= ponderation ? 'mais direto, veloz e orientado à ação' : 'mais cauteloso, consistente e orientado à análise';
+  const relationTilt = openness >= control ? 'mais aberto à troca, influência e adaptação pelo contato' : 'mais focado em critério, estrutura e condução do processo';
+  const bars = [
+    { label: 'Assertividade', value: assertiveness, detail: 'Ação, velocidade e posicionamento.', color: '#BC0F24' },
+    { label: 'Ponderação', value: ponderation, detail: 'Análise, constância e cuidado.', color: '#A3A3A3' },
+    { label: 'Controle', value: control, detail: 'Direção, método e precisão.', color: '#737373' },
+    { label: 'Abertura', value: openness, detail: 'Comunicação, cooperação e flexibilidade.', color: '#C89B18' },
+  ];
+
+  return (
+    <div className="rounded-xl border border-white/10 bg-black/25 p-4 md:p-5">
+      <div className="mb-4">
+        <p className="text-xs font-mono uppercase tracking-widest text-primary">Leitura complementar</p>
+        <h3 className="mt-1 font-display text-lg text-white">Como o perfil tende a decidir e se relacionar</h3>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        {bars.map((bar) => (
+          <div key={bar.label} className="rounded-lg border border-white/10 bg-panel/35 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <p className="font-display text-sm text-white">{bar.label}</p>
+              <span className="font-mono text-xs text-foreground/65">{bar.value}%</span>
+            </div>
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10">
+              <div className="h-full rounded-full" style={{ width: `${Math.min(100, bar.value)}%`, background: bar.color }} />
+            </div>
+            <p className="mt-2 text-xs leading-relaxed text-foreground/55">{bar.detail}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-4 rounded-lg border border-primary/20 bg-primary/5 p-4">
+        <p className="text-sm leading-relaxed text-foreground/75">
+          Na leitura geral, este resultado aparece <span className="font-semibold text-white">{decisionTilt}</span>. Na interação com pessoas e processos, tende a ser <span className="font-semibold text-white">{relationTilt}</span>. Use essa leitura como apoio ao DISC principal, não como substituição do diagnóstico.
+        </p>
+      </div>
+    </div>
+  );
+}
 
 function ComparisonBlock({ normalizedDisplayName, comparisonTests }: { normalizedDisplayName: string; comparisonTests: ComparableTest[] }) {
   const stats = buildComparisonStats(comparisonTests);
@@ -877,7 +931,7 @@ function ComparisonBlock({ normalizedDisplayName, comparisonTests }: { normalize
 
       <div className="mt-5 flex items-center gap-2 text-xs text-foreground/45">
         <UserRound size={14} />
-        Comparativo gerado automaticamente a partir de todos os testes encontrados por nome completo ou telefone.
+        Comparativo gerado automaticamente priorizando o telefone; o nome completo entra como apoio quando não houver histórico para o número informado.
       </div>
     </div>
   );

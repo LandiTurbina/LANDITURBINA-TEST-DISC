@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { Calendar, Check, ChevronDown, Eye, EyeOff, KeyRound, LockKeyhole, LogOut, Mail, Search, X } from 'lucide-react';
 import type { DiscTestRecord } from '@/lib/disc-types';
 import { formatDateTime, onlyDigits } from '@/lib/normalization';
@@ -8,6 +8,17 @@ import { cn } from '@/lib/utils';
 
 type AuthState = 'loading' | 'setup' | 'login' | 'reset' | 'ready' | 'error';
 type SortMode = 'newest' | 'oldest';
+type PersonSummary = {
+  key: string;
+  name: string;
+  phone: string;
+  phoneDigits: string;
+  firstTestAt: string;
+  lastTestAt: string;
+  testCount: number;
+  latestProfile: string;
+  tests: DiscTestRecord[];
+};
 
 const sortLabels: Record<SortMode, string> = {
   newest: 'Mais novo primeiro',
@@ -32,6 +43,7 @@ export default function AdminPage() {
   const [sortMode, setSortMode] = useState<SortMode>('newest');
   const [sortOpen, setSortOpen] = useState(false);
   const [loadingTests, setLoadingTests] = useState(false);
+  const [selectedPerson, setSelectedPerson] = useState<string | null>(null);
 
   const loadTests = useCallback(async () => {
     setLoadingTests(true);
@@ -139,30 +151,56 @@ export default function AdminPage() {
     setAuthState('login');
   }
 
-  const filteredTests = useMemo(() => {
+  const people = useMemo<PersonSummary[]>(() => {
+    const grouped = new Map<string, DiscTestRecord[]>();
+
+    tests.forEach((test) => {
+      const key = test.phoneDigits || test.normalizedNameKey || test.id;
+      grouped.set(key, [...(grouped.get(key) || []), test]);
+    });
+
+    return [...grouped.entries()].map(([key, personTests]) => {
+      const ordered = [...personTests].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+      const first = ordered[0];
+      const last = ordered[ordered.length - 1];
+      return {
+        key,
+        name: last.leadData.nomeCompleto || first.leadData.nomeCompleto,
+        phone: last.leadData.telefone || last.phoneDigits,
+        phoneDigits: last.phoneDigits,
+        firstTestAt: first.timestamp,
+        lastTestAt: last.timestamp,
+        testCount: ordered.length,
+        latestProfile: `${last.primaryProfile} / ${last.secondaryProfile}`,
+        tests: ordered,
+      };
+    });
+  }, [tests]);
+
+  const filteredPeople = useMemo(() => {
     const needle = query.trim().toUpperCase();
     const digits = onlyDigits(query);
     const from = fromDate ? new Date(`${fromDate}T00:00:00`).getTime() : null;
     const to = toDate ? new Date(`${toDate}T23:59:59`).getTime() : null;
 
-    return tests
-      .filter((test) => {
-        const time = new Date(test.timestamp).getTime();
+    return people
+      .filter((person) => {
+        const first = new Date(person.firstTestAt).getTime();
+        const last = new Date(person.lastTestAt).getTime();
         const matchesQuery =
           !needle ||
-          test.leadData.nomeCompleto.includes(needle) ||
-          test.primaryProfile.toUpperCase().includes(needle) ||
-          test.secondaryProfile.toUpperCase().includes(needle) ||
-          (digits && test.phoneDigits.includes(digits));
-        const matchesFrom = from === null || time >= from;
-        const matchesTo = to === null || time <= to;
+          person.name.includes(needle) ||
+          person.latestProfile.toUpperCase().includes(needle) ||
+          (digits && person.phoneDigits.includes(digits));
+        const matchesFrom = from === null || last >= from;
+        const matchesTo = to === null || first <= to;
         return matchesQuery && matchesFrom && matchesTo;
       })
       .sort((a, b) => {
-        const diff = new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+        const diff = new Date(b.lastTestAt).getTime() - new Date(a.lastTestAt).getTime();
         return sortMode === 'newest' ? diff : -diff;
       });
-  }, [fromDate, query, sortMode, tests, toDate]);
+  }, [fromDate, people, query, sortMode, toDate]);
 
   if (authState !== 'ready') {
     const isSetup = authState === 'setup';
@@ -328,41 +366,52 @@ export default function AdminPage() {
         </div>
 
         <div className="mb-4 flex items-center justify-between">
-          <p className="text-sm text-foreground/55">{loadingTests ? 'Carregando...' : `${filteredTests.length} resultado(s) exibido(s)`}</p>
+          <p className="text-sm text-foreground/55">{loadingTests ? 'Carregando...' : `${filteredPeople.length} pessoa(s) exibida(s)`}</p>
           <button onClick={loadTests} className="text-sm text-foreground/65 hover:text-white">Atualizar</button>
         </div>
 
         <div className="overflow-x-auto border border-border rounded-lg">
-          <table className="w-full min-w-[920px] text-left">
+          <table className="w-full min-w-[980px] text-left">
             <thead className="bg-panel/80 text-xs font-mono uppercase text-foreground/45">
               <tr>
                 <th className="px-4 py-3">Nome</th>
                 <th className="px-4 py-3">Telefone</th>
-                <th className="px-4 py-3">Data</th>
-                <th className="px-4 py-3">Perfil</th>
-                <th className="px-4 py-3">D</th>
-                <th className="px-4 py-3">I</th>
-                <th className="px-4 py-3">S</th>
-                <th className="px-4 py-3">C</th>
+                <th className="px-4 py-3">Primeiro teste</th>
+                <th className="px-4 py-3">Último teste</th>
+                <th className="px-4 py-3">Testes</th>
+                <th className="px-4 py-3">Perfil atual</th>
               </tr>
             </thead>
             <tbody>
-              {filteredTests.map((test) => (
-                <tr key={test.id} className="border-t border-border/80 hover:bg-white/[0.03]">
-                  <td className="px-4 py-4 font-medium text-white">{test.leadData.nomeCompleto}</td>
-                  <td className="px-4 py-4 font-mono text-sm text-foreground/70">{test.leadData.telefone || test.phoneDigits}</td>
-                  <td className="px-4 py-4 font-mono text-sm text-foreground/70">{formatDateTime(test.timestamp)}</td>
-                  <td className="px-4 py-4">
-                    <span className="rounded bg-primary/10 text-primary px-2 py-1 text-xs font-mono">{test.primaryProfile} / {test.secondaryProfile}</span>
-                  </td>
-                  {(['D', 'I', 'S', 'C'] as const).map((factor) => (
-                    <td key={factor} className={cn('px-4 py-4 font-mono text-sm', test.percentages[factor] >= 30 ? 'text-white' : 'text-foreground/60')}>{test.percentages[factor]}%</td>
-                  ))}
-                </tr>
+              {filteredPeople.map((person) => (
+                <Fragment key={person.key}>
+                  <tr
+                    className={cn('border-t border-border/80 hover:bg-white/[0.03] cursor-pointer', selectedPerson === person.key && 'bg-primary/[0.06]')}
+                    onClick={() => setSelectedPerson((current) => (current === person.key ? null : person.key))}
+                  >
+                    <td className="px-4 py-4 font-medium text-white">{person.name}</td>
+                    <td className="px-4 py-4 font-mono text-sm text-foreground/70">{person.phone || person.phoneDigits}</td>
+                    <td className="px-4 py-4 font-mono text-sm text-foreground/70">{formatDateTime(person.firstTestAt)}</td>
+                    <td className="px-4 py-4 font-mono text-sm text-foreground/70">{formatDateTime(person.lastTestAt)}</td>
+                    <td className="px-4 py-4">
+                      <span className="rounded-md border border-white/10 bg-white/[0.03] px-2 py-1 text-xs font-mono text-white">{person.testCount}</span>
+                    </td>
+                    <td className="px-4 py-4">
+                      <span className="rounded bg-primary/10 text-primary px-2 py-1 text-xs font-mono">{person.latestProfile}</span>
+                    </td>
+                  </tr>
+                  {selectedPerson === person.key && (
+                    <tr className="border-t border-border/80 bg-black/30">
+                      <td colSpan={6} className="px-4 py-5">
+                        <PersonHistory person={person} />
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               ))}
-              {!filteredTests.length && (
+              {!filteredPeople.length && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-12 text-center text-foreground/45">Nenhum resultado encontrado.</td>
+                  <td colSpan={6} className="px-4 py-12 text-center text-foreground/45">Nenhuma pessoa encontrada.</td>
                 </tr>
               )}
             </tbody>
@@ -370,6 +419,68 @@ export default function AdminPage() {
         </div>
       </section>
     </main>
+  );
+}
+
+function PersonHistory({ person }: { person: PersonSummary }) {
+  const first = person.tests[0];
+  const last = person.tests[person.tests.length - 1];
+  const factors = ['D', 'I', 'S', 'C'] as const;
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]">
+      <div className="overflow-x-auto rounded-lg border border-white/10">
+        <table className="w-full min-w-[680px] text-left text-sm">
+          <thead className="bg-white/[0.03] text-xs font-mono uppercase text-foreground/45">
+            <tr>
+              <th className="px-3 py-3">Data</th>
+              <th className="px-3 py-3">Perfil</th>
+              <th className="px-3 py-3">D</th>
+              <th className="px-3 py-3">I</th>
+              <th className="px-3 py-3">S</th>
+              <th className="px-3 py-3">C</th>
+            </tr>
+          </thead>
+          <tbody>
+            {person.tests.map((test, index) => (
+              <tr key={test.id} className="border-t border-white/10">
+                <td className="px-3 py-3 font-mono text-foreground/70">{formatDateTime(test.timestamp)}</td>
+                <td className="px-3 py-3 text-white">{index + 1}. {test.primaryProfile} / {test.secondaryProfile}</td>
+                {factors.map((factor) => (
+                  <td key={factor} className="px-3 py-3 font-mono text-foreground/80">{test.percentages[factor]}%</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="rounded-lg border border-white/10 bg-panel/40 p-4">
+        <p className="text-xs font-mono uppercase tracking-widest text-primary">Comparativo da pessoa</p>
+        <p className="mt-2 text-sm text-foreground/65">
+          Histórico agrupado prioritariamente pelo telefone. Se o nome variar, este painel mantém os testes vinculados ao mesmo número.
+        </p>
+        <div className="mt-4 space-y-3">
+          {factors.map((factor) => {
+            const delta = last.percentages[factor] - first.percentages[factor];
+            const width = Math.max(8, last.percentages[factor]);
+            return (
+              <div key={factor}>
+                <div className="mb-1 flex items-center justify-between text-xs">
+                  <span className="font-mono text-foreground/55">{factor}</span>
+                  <span className={cn('font-mono', delta > 0 ? 'text-green-400' : delta < 0 ? 'text-red-400' : 'text-foreground/45')}>
+                    {first.percentages[factor]}% para {last.percentages[factor]}% ({delta > 0 ? `+${delta}` : delta})
+                  </span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-white/10">
+                  <div className="h-full rounded-full bg-primary" style={{ width: `${width}%` }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
   );
 }
 
