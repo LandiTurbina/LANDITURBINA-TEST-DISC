@@ -581,55 +581,60 @@ export default function Home() {
         )}
 
         {appState === 'completed' && testResult && (
-          <motion.section key="completed" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex-1 flex flex-col items-center p-4 md:p-10 w-full max-w-6xl mx-auto">
-            <div className="w-full bg-[#0B0B0B] p-5 md:p-8 rounded-xl shadow-2xl">
-              <div className="w-full flex flex-col md:flex-row md:justify-between md:items-center gap-5 mb-10 pb-6 border-b border-white/10">
+          <motion.section key="completed" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex-1 flex flex-col items-center p-3 sm:p-5 md:p-8 w-full max-w-7xl mx-auto">
+            <div className="w-full bg-[#0B0B0B] p-4 sm:p-5 md:p-7 rounded-xl shadow-2xl">
+              <div className="w-full flex flex-col md:flex-row md:justify-between md:items-center gap-5 mb-7 pb-6 border-b border-white/10">
                 <div>
                   <Image src="https://i.imgur.com/PMCjrpw.png" alt="Landi Turbina" width={140} height={40} className="w-32 md:w-40 object-contain mb-4" />
                   <h1 className="font-display font-bold text-2xl md:text-3xl uppercase tracking-tight text-white mb-1">ANÁLISE DE PERFORMANCE</h1>
                   <p className="text-foreground/50 font-mono text-sm uppercase">{normalizedDisplayName} | {formatDateTime(resultTimestamp || new Date().toISOString())}</p>
                 </div>
-                <div className="no-print flex flex-wrap gap-2">
+                <div className="no-print flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end">
                   {resultOrigin === 'history' && (
-                    <button onClick={() => setAppState('history')} className="bg-white/[0.03] hover:bg-white/[0.07] text-white border border-white/15 rounded-lg px-4 py-2 font-display text-sm font-medium transition-all flex items-center gap-2">
+                    <button onClick={() => setAppState('history')} className="justify-center bg-white/[0.03] hover:bg-white/[0.07] text-white border border-white/15 rounded-lg px-4 py-2 font-display text-sm font-medium transition-all flex items-center gap-2">
                       VOLTAR AOS TESTES
                     </button>
                   )}
-                  <button onClick={() => generateAnalysisPDF({ mode: 'full', filename: `Relatorio_DISC_${safePdfName(normalizedDisplayName)}.pdf`, normalizedDisplayName, result: testResult, comparisonTests, reportDate: resultTimestamp })} className="bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded-lg px-4 py-2 font-display text-sm font-medium transition-all flex items-center gap-2">
+                  <button onClick={() => generateAnalysisPDF({ mode: 'full', filename: `Relatorio_DISC_${safePdfName(normalizedDisplayName)}.pdf`, normalizedDisplayName, result: testResult, comparisonTests, reportDate: resultTimestamp })} className="justify-center bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded-lg px-4 py-2 font-display text-sm font-medium transition-all flex items-center gap-2">
                     <Download size={16} /> RELATÓRIO COMPLETO
                   </button>
                 </div>
               </div>
-              <div className="w-full grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12">
-                <div className="lg:col-span-5 flex flex-col items-center lg:items-start">
-                  <DonutChart percentages={testResult.percentages} primaryProfile={testResult.primaryProfile} />
-                  <div className="w-full mt-8 grid grid-cols-2 gap-3">
-                    {(['D', 'I', 'S', 'C'] as Factor[]).map((factor) => (
-                      <div key={factor} className="bg-panel/30 border border-border p-4 rounded-lg flex flex-col items-center relative">
-                        <span className="text-lg font-mono font-medium text-white">{testResult.percentages[factor]}%</span>
-                        <span className="text-[10px] uppercase text-foreground/50 tracking-widest mt-1">{factorLabels[factor]}</span>
-                        {currentDelta && <span className={cn('absolute top-2 right-2 text-[10px] font-mono', currentDelta[factor] > 0 ? 'text-green-500' : currentDelta[factor] < 0 ? 'text-red-500' : 'text-white/30')}>{deltaText(currentDelta[factor])}</span>}
-                      </div>
-                    ))}
+              <div className="w-full grid grid-cols-1 lg:grid-cols-[minmax(320px,430px)_minmax(0,1fr)] gap-5 xl:gap-7 items-start">
+                <div className="flex flex-col gap-5">
+                  <div className="rounded-xl border border-white/10 bg-panel/25 p-4 md:p-5">
+                    <DonutChart percentages={testResult.percentages} primaryProfile={testResult.primaryProfile} />
+                    <div className="w-full mt-5 grid grid-cols-2 gap-3">
+                      {(['D', 'I', 'S', 'C'] as Factor[]).map((factor) => (
+                        <div key={factor} className="bg-black/25 border border-border p-4 rounded-lg flex flex-col items-center relative">
+                          <span className="text-lg font-mono font-medium text-white">{testResult.percentages[factor]}%</span>
+                          <span className="text-[10px] uppercase text-foreground/50 tracking-widest mt-1">{factorLabels[factor]}</span>
+                          {currentDelta && <span className={cn('absolute top-2 right-2 text-[10px] font-mono', currentDelta[factor] > 0 ? 'text-green-500' : currentDelta[factor] < 0 ? 'text-red-500' : 'text-white/30')}>{deltaText(currentDelta[factor])}</span>}
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
-                <div className="lg:col-span-7 flex flex-col justify-start space-y-6">
-                  <div>
-                    <h3 className="text-sm font-mono text-primary uppercase tracking-widest mb-2">DIAGNÓSTICO</h3>
-                    <h2 className="font-display font-bold text-4xl md:text-5xl uppercase tracking-tighter text-white leading-[0.9]">
-                      {testResult.combinedString.split('-')[0]} <br />
-                      <span className="text-white/40">{testResult.combinedString.split('-')[1]}</span>
-                    </h2>
-                  </div>
-                  <div className="bg-primary/5 border border-primary/20 p-6 md:p-8 rounded-xl relative">
-                    <div className="absolute top-0 left-0 w-1 h-full bg-primary rounded-l-xl" />
-                    <p className="text-lg md:text-xl text-foreground font-medium leading-relaxed">&quot;{testResult.reportCopy}&quot;</p>
-                  </div>
-                  <DiscQuadrantMap percentages={testResult.percentages} />
                   <BehavioralAxisPanel percentages={testResult.percentages} />
                 </div>
+
+                <div className="flex flex-col gap-5">
+                  <div className="grid grid-cols-1 xl:grid-cols-[minmax(260px,0.8fr)_minmax(0,1fr)] gap-5">
+                    <div className="rounded-xl border border-white/10 bg-panel/25 p-5 md:p-6">
+                      <h3 className="text-sm font-mono text-primary uppercase tracking-widest mb-2">DIAGNÓSTICO</h3>
+                      <h2 className="font-display font-bold text-4xl md:text-5xl uppercase tracking-tighter text-white leading-[0.9]">
+                        {testResult.combinedString.split('-')[0]} <br />
+                        <span className="text-white/40">{testResult.combinedString.split('-')[1]}</span>
+                      </h2>
+                    </div>
+                    <div className="bg-primary/5 border border-primary/20 p-5 md:p-6 rounded-xl relative">
+                      <div className="absolute top-0 left-0 w-1 h-full bg-primary rounded-l-xl" />
+                      <p className="text-base md:text-lg text-foreground font-medium leading-relaxed">&quot;{testResult.reportCopy}&quot;</p>
+                    </div>
+                  </div>
+                  <DiscQuadrantMap percentages={testResult.percentages} />
+                </div>
               </div>
-              <div className="mt-10">
+              <div className="mt-5">
                 {hasComparison ? (
                   <ComparisonBlock normalizedDisplayName={normalizedDisplayName} comparisonTests={comparisonTests} />
                 ) : (
@@ -747,10 +752,6 @@ function DiscQuadrantMap({ percentages }: { percentages: Record<Factor, number> 
         <div className="col-start-2 row-start-2 relative aspect-square overflow-hidden rounded-lg border border-white/10 bg-black/35 shadow-2xl shadow-black/30">
           <div className="absolute inset-x-0 top-1/2 z-10 h-0.5 bg-white/45" />
           <div className="absolute inset-y-0 left-1/2 z-10 w-0.5 bg-white/45" />
-          <div className="absolute left-1/2 top-1/2 z-20 h-14 w-14 -translate-x-1/2 -translate-y-1/2 rounded-md border border-white/20 bg-[#0B0B0B] flex items-center justify-center shadow-xl">
-            <span className="text-xs font-display text-primary">DISC</span>
-          </div>
-
           <div className="grid h-full w-full grid-cols-2 grid-rows-2">
             {quadrants.map(({ factor, position, axis }) => (
               <div key={factor} className={cn('relative overflow-hidden p-3 md:p-4', position, dominant === factor ? 'ring-2 ring-inset ring-white/70' : '')}>
