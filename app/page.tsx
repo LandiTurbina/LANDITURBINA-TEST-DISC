@@ -39,6 +39,12 @@ const quadrantColors: Record<Factor, string> = {
   S: '#0E8F4A',
   C: '#2A37B8',
 };
+const resultFactorStyles: Record<Factor, string> = {
+  D: 'border-red-500/30 bg-red-500/10 text-red-300',
+  I: 'border-orange-400/30 bg-orange-400/10 text-orange-300',
+  S: 'border-green-400/30 bg-green-400/10 text-green-300',
+  C: 'border-sky-400/25 bg-sky-400/10 text-sky-200',
+};
 const landiLogoUrl = 'https://i.imgur.com/PMCjrpw.png';
 const profileGuide: Array<{ factor: Factor; label: string; summary: string; detail: string; accentClass: string }> = [
   {
@@ -90,12 +96,6 @@ function buildFactorDelta(previousTest: ComparableTest, result: ReturnType<typeo
     S: result.percentages.S - previousTest.percentages.S,
     C: result.percentages.C - previousTest.percentages.C,
   };
-}
-
-function deltaText(value: number) {
-  if (value > 0) return `+${value}`;
-  if (value < 0) return `${value}`;
-  return '=';
 }
 
 function deltaSentence(value: number) {
@@ -336,8 +336,6 @@ export default function Home() {
   }, []);
 
   const normalizedDisplayName = normalizeName(userData.nomeCompleto);
-  const baselineTest = previousTests.length ? sortOldest(previousTests)[0] : null;
-  const currentDelta = baselineTest && testResult ? buildFactorDelta(baselineTest, testResult) : null;
 
   useEffect(() => {
     if (appState === 'splash') {
@@ -628,13 +626,14 @@ export default function Home() {
         )}
 
         {appState === 'completed' && testResult && (
-          <motion.section key="completed" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex-1 flex flex-col items-center p-3 sm:p-5 md:p-8 w-full max-w-7xl mx-auto">
-            <div className="w-full bg-[#0B0B0B] p-4 sm:p-5 md:p-7 rounded-xl shadow-2xl">
-              <div className="w-full flex flex-col md:flex-row md:justify-between md:items-center gap-5 mb-7 pb-6 border-b border-white/10">
-                <div>
-                  <Image src={landiLogoUrl} alt="Landi Turbina" width={140} height={40} className="w-32 md:w-40 object-contain mb-4" />
-                  <h1 className="font-display font-bold text-2xl md:text-3xl uppercase tracking-tight text-white mb-1">SEU RESULTADO DISC</h1>
-                  <p className="text-foreground/50 font-mono text-sm uppercase">{normalizedDisplayName} | {formatDateTime(resultTimestamp || new Date().toISOString())}</p>
+          <motion.section key="completed" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex-1 flex flex-col items-center p-4 md:p-8 w-full max-w-5xl mx-auto">
+            <div className="w-full bg-[#0B0B0B] p-4 sm:p-6 md:p-7 rounded-xl shadow-2xl">
+              <div className="w-full flex flex-col gap-5 md:flex-row md:justify-between md:items-start mb-6 pb-5 border-b border-white/10">
+                <div className="min-w-0">
+                  <Image src={landiLogoUrl} alt="Landi Turbina" width={170} height={50} className="w-40 md:w-44 object-contain mb-5" />
+                  <h1 className="font-display font-bold text-2xl md:text-3xl tracking-tight text-white mb-2">Seu resultado DISC</h1>
+                  <p className="text-sm text-foreground/60 break-words">{normalizedDisplayName}</p>
+                  <p className="mt-1 text-xs font-mono uppercase text-foreground/40">{formatDateTime(resultTimestamp || new Date().toISOString())}</p>
                 </div>
                 <div className="no-print flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end">
                   {resultOrigin === 'history' && (
@@ -647,51 +646,63 @@ export default function Home() {
                   </button>
                 </div>
               </div>
-              <div className="w-full grid grid-cols-1 lg:grid-cols-[minmax(320px,430px)_minmax(0,1fr)] gap-5 xl:gap-7 items-start">
-                <div className="flex flex-col gap-5">
-                  <div className="rounded-xl border border-white/10 bg-panel/25 p-4 md:p-5">
-                    <DonutChart percentages={testResult.percentages} primaryProfile={testResult.primaryProfile} />
-                    <div className="w-full mt-5 grid grid-cols-2 gap-3">
-                      {(['D', 'I', 'S', 'C'] as Factor[]).map((factor) => (
-                        <div key={factor} className="bg-black/25 border border-border p-4 rounded-lg flex flex-col items-center relative">
-                          <span className="text-lg font-mono font-medium text-white">{testResult.percentages[factor]}%</span>
-                          <span className="text-[10px] uppercase text-foreground/50 tracking-widest mt-1">{factorLabels[factor]}</span>
-                          {currentDelta && <span className={cn('absolute top-2 right-2 text-[10px] font-mono', currentDelta[factor] > 0 ? 'text-green-500' : currentDelta[factor] < 0 ? 'text-red-500' : 'text-white/30')}>{deltaText(currentDelta[factor])}</span>}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  <BehavioralAxisPanel percentages={testResult.percentages} />
-                </div>
 
-                <div className="flex flex-col gap-5">
-                  <div className="grid grid-cols-1 xl:grid-cols-[minmax(260px,0.8fr)_minmax(0,1fr)] gap-5">
-                    <div className="rounded-xl border border-white/10 bg-panel/25 p-5 md:p-6">
-                      <h3 className="text-sm font-mono text-primary uppercase tracking-widest mb-2">DIAGNÓSTICO</h3>
-                      <h2 className="font-display font-bold text-4xl md:text-5xl uppercase tracking-tighter text-white leading-[0.9]">
-                        {testResult.combinedString.split('-')[0]} <br />
-                        <span className="text-white/40">{testResult.combinedString.split('-')[1]}</span>
-                      </h2>
-                    </div>
-                    <div className="bg-primary/5 border border-primary/20 p-5 md:p-6 rounded-xl relative">
-                      <div className="absolute top-0 left-0 w-1 h-full bg-primary rounded-l-xl" />
-                      <p className="text-base md:text-lg text-foreground font-medium leading-relaxed">&quot;{testResult.reportCopy}&quot;</p>
-                    </div>
-                  </div>
-                  <DiscQuadrantMap percentages={testResult.percentages} />
-                </div>
+              <div className="rounded-xl border border-primary/25 bg-primary/10 p-5 md:p-7">
+                <p className="text-xs font-mono uppercase tracking-widest text-primary">Seu perfil predominante</p>
+                <h2 className="mt-3 font-display text-4xl md:text-5xl font-bold text-white">{testResult.primaryProfile}</h2>
+                <p className="mt-4 text-base text-foreground/80">Perfil de apoio: <span className="font-semibold text-white">{testResult.secondaryProfile}</span></p>
+                <p className="mt-4 max-w-2xl text-sm leading-relaxed text-foreground/70">
+                  Esse resultado indica como você tende a agir, decidir e se relacionar no ambiente de trabalho.
+                </p>
               </div>
-              <ProfileGuide />
-              <div className="mt-5">
-                {hasComparison ? (
-                  <ComparisonBlock normalizedDisplayName={normalizedDisplayName} comparisonTests={comparisonTests} />
-                ) : (
-                  <div className="bg-panel/50 border border-border p-6 rounded-xl">
-                    <h4 className="text-xs font-mono text-foreground/50 uppercase tracking-widest mb-2">Primeiro registro</h4>
-                    <p className="text-sm text-foreground/75">Este é o primeiro teste DISC localizado para este cadastro. O próximo resultado já terá comparativo completo por data.</p>
+
+              <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+                {(['D', 'I', 'S', 'C'] as Factor[]).map((factor) => (
+                  <div key={factor} className={cn('rounded-lg border p-4', resultFactorStyles[factor])}>
+                    <p className="text-xs font-mono uppercase tracking-widest opacity-80">{factorLabels[factor]}</p>
+                    <p className="mt-2 font-display text-3xl font-bold text-white">{testResult.percentages[factor]}%</p>
                   </div>
+                ))}
+              </div>
+
+              <div className="mt-5 rounded-lg border border-white/10 bg-panel/30 p-4">
+                {hasComparison ? (
+                  <p className="text-sm text-foreground/75">Você possui <span className="font-mono text-white">{comparisonTests.length}</span> testes salvos.</p>
+                ) : (
+                  <p className="text-sm text-foreground/75">Este é seu primeiro teste salvo. Em novos testes, o sistema poderá comparar sua evolução.</p>
                 )}
               </div>
+
+              <details className="mt-5 rounded-lg border border-white/10 bg-black/25 p-4">
+                <summary className="cursor-pointer list-none font-display text-sm font-medium text-white transition-colors hover:text-primary">
+                  Ver análise detalhada
+                </summary>
+                <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-[minmax(300px,380px)_minmax(0,1fr)]">
+                  <div className="rounded-xl border border-white/10 bg-panel/25 p-4">
+                    <DonutChart percentages={testResult.percentages} primaryProfile={testResult.primaryProfile} />
+                  </div>
+                  <div className="space-y-5">
+                    <div className="bg-primary/5 border border-primary/20 p-5 rounded-xl relative">
+                      <div className="absolute top-0 left-0 w-1 h-full bg-primary rounded-l-xl" />
+                      <p className="text-sm md:text-base text-foreground/80 font-medium leading-relaxed">&quot;{testResult.reportCopy}&quot;</p>
+                    </div>
+                    <DiscQuadrantMap percentages={testResult.percentages} />
+                    <BehavioralAxisPanel percentages={testResult.percentages} />
+                    <ProfileGuide />
+                  </div>
+                </div>
+              </details>
+
+              {hasComparison && (
+                <details className="mt-4 rounded-lg border border-white/10 bg-black/25 p-4">
+                  <summary className="cursor-pointer list-none font-display text-sm font-medium text-white transition-colors hover:text-primary">
+                    Ver histórico completo
+                  </summary>
+                  <div className="mt-5">
+                    <ComparisonBlock normalizedDisplayName={normalizedDisplayName} comparisonTests={comparisonTests} />
+                  </div>
+                </details>
+              )}
             </div>
           </motion.section>
         )}
